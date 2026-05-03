@@ -22,6 +22,7 @@ import {
   useState,
   type ChangeEvent,
   type KeyboardEvent,
+  type PointerEvent,
 } from "react";
 import { ensurePianoEngine } from "../lib/audio/pianoEngine";
 import {
@@ -35,6 +36,18 @@ import {
 import type { PlaybackEvent } from "../lib/musicxml";
 
 const EMPTY_PLAYBACK_EVENTS: PlaybackEvent[] = [];
+
+function blurPointerButton(event: PointerEvent<HTMLElement>): void {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const button = target.closest("button");
+  if (button && event.currentTarget.contains(button)) {
+    button.blur();
+  }
+}
 
 export const Controls = memo(function Controls() {
   const [openPanel, setOpenPanel] = useState<"info" | "practice" | undefined>();
@@ -125,7 +138,7 @@ export const Controls = memo(function Controls() {
 
   return (
     <>
-      <header className="topbar">
+      <header className="topbar" onPointerUpCapture={blurPointerButton}>
         <div className="brand-block">
           <h1>Piano River</h1>
         </div>

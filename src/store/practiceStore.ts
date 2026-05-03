@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   buildPlaybackEvents,
+  buildPlaybackSections,
   fetchMusicXml,
   parseMusicXml,
   readMusicXmlFile,
@@ -61,6 +62,10 @@ const DEFAULT_SETTINGS: PracticeSettings = {
 const ACTIVE_EVENT_LOOKBACK_BEATS = 16;
 const initialTempoCache = new WeakMap<ScoreModel, number>();
 const measureByNumberCache = new WeakMap<ScoreModel, Map<string, ScoreModel["measures"][number]>>();
+const performanceMeasuresCache = new WeakMap<
+  ScoreModel,
+  Array<{ absoluteBeat: number; measureIndex: number; number: string; sourceStartBeat: number }>
+>();
 const playbackStatsCache = new WeakMap<
   PlaybackEvent[],
   { endBeat: number; maxDurationBeats: number }
@@ -166,6 +171,90 @@ function eventIndexAtOrBefore(events: PlaybackEvent[], positionBeats: number): n
   while (low <= high) {
     const middle = Math.floor((low + high) / 2);
     if (events[middle].absoluteBeat <= positionBeats) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  return match;
+}
+
+function measureIndexAtOrBefore(score: ScoreModel, sourceBeat: number): number {
+  let low = 0;
+  let high = score.measures.length - 1;
+  let match = -1;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (score.measures[middle].startBeat <= sourceBeat) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  return Math.max(0, match);
+}
+
+function performanceMeasures(score: ScoreModel) {
+  const cached = performanceMeasuresCache.get(score);
+  if (cached) {
+    return cached;
+  }
+
+  const measures: Array<{
+    absoluteBeat: number;
+    measureIndex: number;
+    number: string;
+    sourceStartBeat: number;
+  }> = [];
+
+  for (const section of buildPlaybackSections(score)) {
+    const startIndex = measureIndexAtOrBefore(score, section.sourceStartBeat);
+    for (let index = startIndex; index < score.measures.length; index += 1) {
+      const measure = score.measures[index];
+      const measureEndBeat = measure.startBeat + measure.durationBeats;
+      if (measure.startBeat >= section.sourceEndBeat) {
+        break;
+      }
+      if (measureEndBeat <= section.sourceStartBeat) {
+        continue;
+      }
+
+      const sourceStartBeat = Math.max(measure.startBeat, section.sourceStartBeat);
+      measures.push({
+        absoluteBeat: section.performanceStartBeat + (sourceStartBeat - section.sourceStartBeat),
+        measureIndex: measure.index,
+        number: measure.number,
+        sourceStartBeat,
+      });
+    }
+  }
+
+  const sorted = measures.toSorted(
+    (first, second) =>
+      first.absoluteBeat - second.absoluteBeat || first.sourceStartBeat - second.sourceStartBeat,
+  );
+  performanceMeasuresCache.set(score, sorted);
+
+  return sorted;
+}
+
+function performanceMeasureIndexAt(
+  measures: Array<{ absoluteBeat: number }>,
+  positionBeats: number,
+): number {
+  let low = 0;
+  let high = measures.length - 1;
+  let match = -1;
+  const position = Math.max(0, positionBeats);
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (measures[middle].absoluteBeat <= position + 0.0001) {
       match = middle;
       low = middle + 1;
     } else {
@@ -353,28 +442,24 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
   },
 
   seekByMeasures(delta) {
-    const score = get().score;
+    const { playbackEvents, positionBeats, score } = get();
     if (!score || delta === 0) {
       return;
     }
 
-    const currentPosition = sourceBeatAt(get().playbackEvents, get().positionBeats);
     const lower = minimumPositionBeats(score);
-    if (currentPosition < 0 && delta > 0) {
+    if (positionBeats < 0 && delta > 0) {
       set({ positionBeats: 0 });
       return;
     }
 
-    const currentIndex = score.measures.findLastIndex(
-      (measure) => measure.startBeat <= Math.max(0, currentPosition),
-    );
+    const measures = performanceMeasures(score);
+    const currentIndex = performanceMeasureIndexAt(measures, positionBeats);
     const nextIndex = currentIndex + delta;
     const nextPosition =
-      nextIndex < 0
-        ? lower
-        : score.measures[Math.min(score.measures.length - 1, nextIndex)]?.startBeat;
+      nextIndex < 0 ? lower : measures[Math.min(measures.length - 1, nextIndex)]?.absoluteBeat;
     set({
-      positionBeats: clampPosition(score, get().playbackEvents, nextPosition ?? currentPosition),
+      positionBeats: clampPosition(score, playbackEvents, nextPosition ?? positionBeats),
     });
   },
 

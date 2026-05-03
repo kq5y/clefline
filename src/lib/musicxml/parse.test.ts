@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseMusicXml } from "./parse";
-import { buildPlaybackEvents } from "./timeline";
+import { buildPlaybackEvents, buildPlaybackSections } from "./timeline";
 
 const samplePath = resolve(process.cwd(), "public/samples/sample_science.musicxml");
 
@@ -203,5 +203,51 @@ describe("parseMusicXml", () => {
       "F4",
     ]);
     expect(playback.at(-1)?.absoluteBeat).toBeGreaterThan(score.totalBeats);
+  });
+
+  it("expands simple repeat barlines into the playback timeline", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>1</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+    </measure>
+    <measure number="2">
+      <barline location="left"><repeat direction="forward"/></barline>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <barline location="right"><repeat direction="backward"/></barline>
+    </measure>
+    <measure number="4">
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+    const score = parseMusicXml(xml);
+    const playback = buildPlaybackEvents(score);
+    const sections = buildPlaybackSections(score);
+
+    expect(playback.map((event) => event.notes[0].pitchName)).toEqual([
+      "C4",
+      "D4",
+      "E4",
+      "D4",
+      "E4",
+      "F4",
+    ]);
+    expect(sections).toEqual([
+      { performanceStartBeat: 0, sourceStartBeat: 0, sourceEndBeat: 3 },
+      { performanceStartBeat: 3, sourceStartBeat: 1, sourceEndBeat: 4 },
+    ]);
   });
 });

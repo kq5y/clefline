@@ -6,6 +6,12 @@ export type TimelineOptions = {
   handMode?: "both" | "right" | "left";
 };
 
+export type PlaybackSection = {
+  performanceStartBeat: number;
+  sourceEndBeat: number;
+  sourceStartBeat: number;
+};
+
 function includeHand(note: NoteEvent, handMode: TimelineOptions["handMode"]): boolean {
   if (!handMode || handMode === "both") {
     return true;
@@ -370,6 +376,86 @@ function firstBeat(score: ScoreModel, predicate: (direction: DirectionEvent) => 
   return score.directions.find(predicate)?.beat;
 }
 
+function measureEndBeat(measure: ScoreModel["measures"][number]): number {
+  return measure.startBeat + measure.durationBeats;
+}
+
+function appendSourceSection(
+  sections: Array<{ start: number; end: number }>,
+  start: number,
+  end: number,
+): void {
+  if (end <= start) {
+    return;
+  }
+
+  const previous = sections.at(-1);
+  if (previous && previous.end === start) {
+    previous.end = end;
+    return;
+  }
+
+  sections.push({ start, end });
+}
+
+function firstEndingStartBeat(
+  score: ScoreModel,
+  repeatStartBeat: number,
+  repeatEndBeat: number,
+): number | undefined {
+  return score.measures.find(
+    (measure) =>
+      measure.startBeat >= repeatStartBeat &&
+      measure.startBeat < repeatEndBeat &&
+      measure.endings.includes("1"),
+  )?.startBeat;
+}
+
+function repeatExpandedSourceSections(score: ScoreModel): Array<{ start: number; end: number }> {
+  const sections: Array<{ start: number; end: number }> = [];
+  let cursor = 0;
+  let repeatStartBeat = 0;
+
+  for (const measure of score.measures) {
+    if (measure.repeatStart) {
+      repeatStartBeat = measure.startBeat;
+    }
+
+    if (!measure.repeatEnd) {
+      continue;
+    }
+
+    const repeatEndBeat = measureEndBeat(measure);
+    appendSourceSection(sections, cursor, repeatEndBeat);
+
+    const secondPassEndBeat =
+      firstEndingStartBeat(score, repeatStartBeat, repeatEndBeat) ?? repeatEndBeat;
+    appendSourceSection(sections, repeatStartBeat, secondPassEndBeat);
+
+    cursor = repeatEndBeat;
+    repeatStartBeat = repeatEndBeat;
+  }
+
+  appendSourceSection(sections, cursor, score.totalBeats);
+
+  return sections.length > 0 ? sections : [{ start: 0, end: score.totalBeats }];
+}
+
+function sourceSectionsInRange(
+  sections: Array<{ start: number; end: number }>,
+  startBeat: number,
+  endBeat: number,
+): Array<{ start: number; end: number }> {
+  const sliced: Array<{ start: number; end: number }> = [];
+  for (const section of sections) {
+    const start = Math.max(section.start, startBeat);
+    const end = Math.min(section.end, endBeat);
+    appendSourceSection(sliced, start, end);
+  }
+
+  return sliced;
+}
+
 function copyEventsInSection(
   events: PlaybackEvent[],
   sourceStart: number,
@@ -386,12 +472,13 @@ function copyEventsInSection(
     }));
 }
 
-function expandNavigation(score: ScoreModel, events: PlaybackEvent[]): PlaybackEvent[] {
+function navigationSourceSections(score: ScoreModel): Array<{ start: number; end: number }> {
+  const repeatedSections = repeatExpandedSourceSections(score);
   const dsBeat = firstBeat(score, (direction) => hasDirection(direction, /dalsegno|d\.s\./i));
   const dcBeat = firstBeat(score, (direction) => hasDirection(direction, /dacapo|d\.c\./i));
   const jumpBeat = dsBeat ?? dcBeat;
   if (jumpBeat === undefined) {
-    return events;
+    return repeatedSections;
   }
 
   const jumpText = score.directions
@@ -408,24 +495,56 @@ function expandNavigation(score: ScoreModel, events: PlaybackEvent[]): PlaybackE
   const repeatEnd = useCoda ? toCodaBeat : (fineBeat ?? score.totalBeats);
 
   if (repeatEnd <= targetBeat || jumpBeat <= 0) {
-    return events;
+    return repeatedSections;
   }
 
   const sections: Array<{ start: number; end: number }> = [
-    { start: 0, end: jumpBeat },
-    { start: targetBeat, end: repeatEnd },
+    ...sourceSectionsInRange(repeatedSections, 0, jumpBeat),
+    ...sourceSectionsInRange(repeatedSections, targetBeat, repeatEnd),
   ];
   if (useCoda) {
-    sections.push({ start: codaBeat, end: score.totalBeats });
+    sections.push(...sourceSectionsInRange(repeatedSections, codaBeat, score.totalBeats));
   }
 
+  return sections;
+}
+
+export function buildPlaybackSections(score: ScoreModel): PlaybackSection[] {
   let performanceStart = 0;
+  return navigationSourceSections(score).map((section) => {
+    const playbackSection = {
+      performanceStartBeat: performanceStart,
+      sourceEndBeat: section.end,
+      sourceStartBeat: section.start,
+    };
+    performanceStart += section.end - section.start;
+
+    return playbackSection;
+  });
+}
+
+function expandNavigation(score: ScoreModel, events: PlaybackEvent[]): PlaybackEvent[] {
+  const sections = buildPlaybackSections(score);
+  if (
+    sections.length === 1 &&
+    sections[0].sourceStartBeat === 0 &&
+    sections[0].sourceEndBeat === score.totalBeats &&
+    sections[0].performanceStartBeat === 0
+  ) {
+    return events;
+  }
+
   const expanded: PlaybackEvent[] = [];
   for (const [sectionIndex, section] of sections.entries()) {
     expanded.push(
-      ...copyEventsInSection(events, section.start, section.end, performanceStart, sectionIndex),
+      ...copyEventsInSection(
+        events,
+        section.sourceStartBeat,
+        section.sourceEndBeat,
+        section.performanceStartBeat,
+        sectionIndex,
+      ),
     );
-    performanceStart += section.end - section.start;
   }
 
   return expanded.toSorted(
