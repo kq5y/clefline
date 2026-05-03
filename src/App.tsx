@@ -1,5 +1,5 @@
 import "./App.css";
-import { useState, type DragEvent } from "react";
+import { useMemo, useState, type DragEvent } from "react";
 import { Controls } from "./components/Controls";
 import { NoteRiver } from "./components/NoteRiver";
 import { PianoKeyboard } from "./components/PianoKeyboard";
@@ -17,7 +17,10 @@ function App() {
   const positionBeats = usePracticeStore((state) => state.positionBeats);
   const settings = usePracticeStore((state) => state.settings);
   const loadFile = usePracticeStore((state) => state.loadFile);
-  const activeNotes = activeNotesAt(playbackEvents, positionBeats);
+  const activeNotes = useMemo(
+    () => activeNotesAt(playbackEvents, positionBeats),
+    [playbackEvents, positionBeats],
+  );
   const progress = score?.totalBeats ? (positionBeats / score.totalBeats) * 100 : 0;
   const handleDragOver = (event: DragEvent) => {
     event.preventDefault();
@@ -49,10 +52,17 @@ function App() {
             score={score}
             positionBeats={positionBeats}
             handMode={settings.handMode}
+            riverZoom={settings.riverZoom}
+            showMeasureLines={settings.showMeasureLines}
             showNoteNames={settings.showNoteNames}
           />
         ) : (
-          <ScoreView score={score} positionBeats={positionBeats} />
+          <ScoreView
+            activeNotes={activeNotes}
+            playbackEvents={playbackEvents}
+            score={score}
+            positionBeats={positionBeats}
+          />
         )}
       </section>
       <section className="keyboard-shell" aria-label="Piano keyboard">

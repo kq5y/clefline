@@ -1,3 +1,4 @@
+import { memo, useCallback, useMemo } from "react";
 import { isBlackKey, midiToPitchName, PIANO_MAX_MIDI, PIANO_MIN_MIDI } from "../lib/musicxml";
 import { playMidiOnce } from "../lib/audio/pianoEngine";
 import type { Hand } from "../lib/musicxml";
@@ -18,6 +19,7 @@ const KEYS = Array.from({ length: PIANO_MAX_MIDI - PIANO_MIN_MIDI + 1 }, (_, ind
 });
 
 const WHITE_KEYS = KEYS.filter((key) => !key.black);
+const BLACK_KEYS = KEYS.filter((key) => key.black);
 
 function whiteIndexFor(midi: number): number {
   return WHITE_KEYS.findIndex((key) => key.midi === midi);
@@ -27,7 +29,7 @@ function blackLeftPercent(midi: number): number {
   const previousWhiteIndex = WHITE_KEYS.findLast((key) => key.midi < midi);
   const whiteIndex = previousWhiteIndex ? whiteIndexFor(previousWhiteIndex.midi) : 0;
 
-  return ((whiteIndex + 0.72) / WHITE_KEYS.length) * 100;
+  return ((whiteIndex + 1) / WHITE_KEYS.length) * 100;
 }
 
 function activeClass(hand: Hand | undefined, black: boolean): string {
@@ -45,11 +47,17 @@ function activeClass(hand: Hand | undefined, black: boolean): string {
   return base;
 }
 
-export function PianoKeyboard({ activeNotes, showNoteNames }: PianoKeyboardProps) {
-  const active = new Map(activeNotes.map((note) => [note.midi, note.hand]));
-  const playKey = (midi: number) => {
+export const PianoKeyboard = memo(function PianoKeyboard({
+  activeNotes,
+  showNoteNames,
+}: PianoKeyboardProps) {
+  const active = useMemo(
+    () => new Map(activeNotes.map((note) => [note.midi, note.hand])),
+    [activeNotes],
+  );
+  const playKey = useCallback((midi: number) => {
     void playMidiOnce(midi, 0.78);
-  };
+  }, []);
 
   return (
     <div className="piano-keyboard">
@@ -68,7 +76,7 @@ export function PianoKeyboard({ activeNotes, showNoteNames }: PianoKeyboardProps
         ))}
       </div>
       <div className="black-keys">
-        {KEYS.filter((key) => key.black).map((key) => (
+        {BLACK_KEYS.map((key) => (
           <button
             aria-label={key.name}
             className={activeClass(active.get(key.midi), true)}
@@ -81,4 +89,4 @@ export function PianoKeyboard({ activeNotes, showNoteNames }: PianoKeyboardProps
       </div>
     </div>
   );
-}
+});

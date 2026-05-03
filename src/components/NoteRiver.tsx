@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import type { HandMode } from "../store/practiceStore";
 import type { ScoreModel } from "../lib/musicxml";
 
@@ -5,11 +6,14 @@ type NoteRiverProps = {
   score?: ScoreModel;
   positionBeats: number;
   handMode: HandMode;
+  riverZoom: number;
+  showMeasureLines: boolean;
   showNoteNames: boolean;
 };
 
-const LOOK_AHEAD_BEATS = 16;
-const LOOK_BEHIND_BEATS = 1;
+const BASE_LOOK_AHEAD_BEATS = 16;
+const LOOK_BEHIND_BEATS = 0.5;
+const STRIKE_Y = 100;
 
 function includeVisual(handMode: HandMode, hand: string): boolean {
   return handMode === "both" || hand === handMode;
@@ -19,13 +23,52 @@ function xForMidi(midi: number): number {
   return ((midi - 21) / 87) * 100;
 }
 
-export function NoteRiver({ score, positionBeats, handMode, showNoteNames }: NoteRiverProps) {
-  const notes =
-    score?.notes.filter(
-      (note) =>
-        note.startBeat + note.durationBeats >= positionBeats - LOOK_BEHIND_BEATS &&
-        note.startBeat <= positionBeats + LOOK_AHEAD_BEATS,
-    ) ?? [];
+function yForBeat(beat: number, positionBeats: number, lookAheadBeats: number): number {
+  return STRIKE_Y - ((beat - positionBeats) / lookAheadBeats) * STRIKE_Y;
+}
+
+function clampVisibleY(value: number): number {
+  return Math.min(STRIKE_Y, Math.max(-10, value));
+}
+
+export const NoteRiver = memo(function NoteRiver({
+  score,
+  positionBeats,
+  handMode,
+  riverZoom,
+  showMeasureLines,
+  showNoteNames,
+}: NoteRiverProps) {
+  const lookAheadBeats = BASE_LOOK_AHEAD_BEATS / Math.max(0.5, riverZoom);
+  const notes = useMemo(
+    () =>
+      score?.notes.filter(
+        (note) =>
+          note.startBeat + note.durationBeats >= positionBeats - LOOK_BEHIND_BEATS &&
+          note.startBeat <= positionBeats + lookAheadBeats,
+      ) ?? [],
+    [lookAheadBeats, positionBeats, score],
+  );
+  const measureLines = useMemo(
+    () =>
+      score?.measures.filter(
+        (measure) =>
+          measure.startBeat >= positionBeats && measure.startBeat <= positionBeats + lookAheadBeats,
+      ) ?? [],
+    [lookAheadBeats, positionBeats, score],
+  );
+  const activeLabels = useMemo(
+    () =>
+      score?.notes
+        .filter(
+          (note) =>
+            note.startBeat <= positionBeats &&
+            note.startBeat + Math.max(note.durationBeats, 0.1) > positionBeats &&
+            includeVisual(handMode, note.hand),
+        )
+        .slice(0, 12) ?? [],
+    [handMode, positionBeats, score],
+  );
 
   if (!score) {
     return (
@@ -48,21 +91,40 @@ export function NoteRiver({ score, positionBeats, handMode, showNoteNames }: Not
             <stop offset="100%" stopColor="#72d6b0" />
           </linearGradient>
         </defs>
-        <line className="strike-line" x1="0" x2="100" y1="92" y2="92" />
+        {showMeasureLines
+          ? measureLines.map((measure) => {
+              const y = yForBeat(measure.startBeat, positionBeats, lookAheadBeats);
+
+              return (
+                <line className="measure-line" key={measure.index} x1="0" x2="100" y1={y} y2={y} />
+              );
+            })
+          : null}
+        <line className="strike-line" x1="0" x2="100" y1={STRIKE_Y} y2={STRIKE_Y} />
         {notes.map((note) => {
-          const delta = note.startBeat - positionBeats;
-          const y = 92 - (delta / LOOK_AHEAD_BEATS) * 92;
-          const height = Math.max(1.4, (note.durationBeats / LOOK_AHEAD_BEATS) * 92);
+          const startY = yForBeat(note.startBeat, positionBeats, lookAheadBeats);
+          const endY = yForBeat(note.startBeat + note.durationBeats, positionBeats, lookAheadBeats);
+          const top = clampVisibleY(Math.min(startY, endY));
+          const bottom = Math.min(STRIKE_Y, Math.max(startY, endY));
+          const height = Math.max(1.2, bottom - top);
+          const attackY = Math.min(STRIKE_Y, Math.max(0, startY));
           const selected = includeVisual(handMode, note.hand);
           return (
-            <g key={note.id} opacity={selected ? 1 : 0.22}>
+            <g className="river-note-group" key={note.id} opacity={selected ? 1 : 0.18}>
               <rect
                 className={note.hand === "left" ? "river-note left" : "river-note right"}
                 x={xForMidi(note.midi) - 0.38}
-                y={Math.max(-8, y - height)}
+                y={top}
                 width="0.76"
                 height={height}
                 rx="0.28"
+              />
+              <line
+                className={note.hand === "left" ? "note-attack left" : "note-attack right"}
+                x1={xForMidi(note.midi) - 0.38}
+                x2={xForMidi(note.midi) + 0.38}
+                y1={attackY}
+                y2={attackY}
               />
             </g>
           );
@@ -70,19 +132,11 @@ export function NoteRiver({ score, positionBeats, handMode, showNoteNames }: Not
       </svg>
       {showNoteNames ? (
         <div className="current-readout">
-          {score.notes
-            .filter(
-              (note) =>
-                note.startBeat <= positionBeats &&
-                note.startBeat + Math.max(note.durationBeats, 0.1) > positionBeats &&
-                includeVisual(handMode, note.hand),
-            )
-            .slice(0, 12)
-            .map((note) => (
-              <span key={note.id}>{note.pitchName}</span>
-            ))}
+          {activeLabels.map((note) => (
+            <span key={note.id}>{note.pitchName}</span>
+          ))}
         </div>
       ) : null}
     </div>
   );
-}
+});

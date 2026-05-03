@@ -194,6 +194,18 @@ export function Controls() {
               <span>{Math.round(settings.speed * 100)}%</span>
             </label>
             <label className="slider-control stacked">
+              River zoom
+              <input
+                max="2"
+                min="0.6"
+                step="0.1"
+                type="range"
+                value={settings.riverZoom}
+                onChange={(event) => updateSettings({ riverZoom: Number(event.target.value) })}
+              />
+              <span>{Math.round(settings.riverZoom * 100)}%</span>
+            </label>
+            <label className="slider-control stacked">
               Volume
               <input
                 max="1"
@@ -264,6 +276,14 @@ export function Controls() {
                 onChange={(event) => updateSettings({ showNoteNames: event.target.checked })}
               />
               Names
+            </label>
+            <label className="toggle-control">
+              <input
+                type="checkbox"
+                checked={settings.showMeasureLines}
+                onChange={(event) => updateSettings({ showMeasureLines: event.target.checked })}
+              />
+              Measure lines
             </label>
           </div>
         ) : null}

@@ -15,6 +15,8 @@ export type HandMode = "both" | "right" | "left";
 export type PracticeSettings = {
   viewMode: ViewMode;
   speed: number;
+  riverZoom: number;
+  showMeasureLines: boolean;
   loopEnabled: boolean;
   loopStartMeasure?: string;
   loopEndMeasure?: string;
@@ -45,6 +47,8 @@ type PracticeState = {
 const DEFAULT_SETTINGS: PracticeSettings = {
   viewMode: "river",
   speed: 1,
+  riverZoom: 1,
+  showMeasureLines: false,
   loopEnabled: false,
   handMode: "both",
   volume: 0.75,
@@ -107,6 +111,7 @@ export function activeNotesAt(events: PlaybackEvent[], positionBeats: number) {
       event.notes.map((note) => ({
         midi: note.midi,
         hand: note.hand,
+        pitchName: note.pitchName,
       })),
     );
 }

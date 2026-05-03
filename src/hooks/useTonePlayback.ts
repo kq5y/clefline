@@ -58,13 +58,14 @@ export function useTonePlayback(): void {
         scheduledRef.current.add(event.id);
         const startTime = backend.Tone.now() + (event.absoluteBeat - startBeat) * beatSeconds;
         const duration = Math.max(0.05, event.durationBeats * beatSeconds * 0.92);
+        const velocity = Math.min(1, Math.max(0.05, event.velocity * state.settings.volume));
 
         for (const [index, note] of event.notes.entries()) {
           void scheduleMidi(
             note.midi,
             startTime + index * event.rollOffsetBeats * beatSeconds,
             duration,
-            state.settings.volume,
+            velocity,
           );
         }
       }

@@ -44,10 +44,7 @@
   position: relative;
   min-height: 0;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 16% 12%, rgb(114 214 176 / 13%), transparent 28%),
-    radial-gradient(circle at 88% 20%, rgb(243 142 114 / 10%), transparent 28%),
-    linear-gradient(180deg, rgb(78 117 145 / 14%), transparent 50%), var(--viewer);
+  background: linear-gradient(180deg, rgb(78 117 145 / 14%), transparent 52%), var(--viewer);
 }
 
 .progress-track {
@@ -85,10 +82,6 @@
   display: block;
 }
 
-.river-note {
-  filter: drop-shadow(0 0 6px rgb(255 255 255 / 18%));
-}
-
 .river-note.right {
   fill: url("#right-note");
 }
@@ -98,15 +91,34 @@
 }
 
 .strike-line {
-  stroke: rgb(255 255 255 / 48%);
-  stroke-dasharray: 1 1.25;
-  stroke-width: 0.25;
+  vector-effect: non-scaling-stroke;
+  stroke: rgb(255 255 255 / 62%);
+  stroke-width: 2px;
+}
+
+.measure-line {
+  vector-effect: non-scaling-stroke;
+  stroke: rgb(255 255 255 / 17%);
+  stroke-width: 1px;
+}
+
+.note-attack {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 2px;
+}
+
+.note-attack.right {
+  stroke: #ffe0b4;
+}
+
+.note-attack.left {
+  stroke: #d1fff2;
 }
 
 .current-readout {
   position: absolute;
+  top: 12px;
   right: 14px;
-  bottom: 12px;
   left: 14px;
   display: flex;
   flex-wrap: wrap;
@@ -333,33 +345,33 @@ input:focus-visible {
 .score-view {
   position: relative;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
   background: #f6f3ec;
   color: #1b1d22;
 }
 
-.score-canvas {
-  min-height: 100%;
-  padding: 26px 20px 40px;
+.score-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
-.score-follow-line {
-  position: sticky;
-  z-index: 3;
-  top: 46%;
-  height: 0;
-  border-top: 3px solid #e05842;
-  box-shadow: 0 0 16px rgb(224 88 66 / 44%);
-  pointer-events: none;
+.score-canvas {
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  padding: 18px 48vw 24px 22px;
+  box-sizing: content-box;
 }
 
 .score-current-measure,
-.score-error {
-  position: sticky;
+.score-error,
+.score-active-notes {
+  position: absolute;
   z-index: 4;
   top: 10px;
   width: max-content;
-  margin: 10px auto 0;
   border: 1px solid rgb(0 0 0 / 12%);
   border-radius: 999px;
   padding: 4px 11px;
@@ -369,9 +381,43 @@ input:focus-visible {
   font-size: 12px;
 }
 
+.score-current-measure {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 .score-error {
+  left: 50%;
+  transform: translateX(-50%);
   border-color: #c75f43;
   color: #9f3d24;
+}
+
+.score-active-notes {
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  background: rgb(255 255 255 / 74%);
+}
+
+.score-note-chip {
+  min-width: 32px;
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: #172027;
+  text-align: center;
+}
+
+.score-note-chip.right {
+  background: #ffd4b8;
+}
+
+.score-note-chip.left {
+  background: #bcf6e7;
+}
+
+.score-note-chip.unknown {
+  background: #ffe8a8;
 }
 
 .keyboard-shell {
@@ -448,7 +494,7 @@ input:focus-visible {
 
 .black-key {
   position: absolute;
-  width: calc(100% / 52 * 0.68);
+  width: calc(100% / 52 * 0.62);
   height: 100%;
   transform: translateX(-50%);
   border: 1px solid #090a0e;
