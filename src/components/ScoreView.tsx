@@ -50,6 +50,18 @@ type ScoreOffset = {
   y: number;
 };
 
+type ScoreBounds = {
+  scrollWidth: number;
+  scrollHeight: number;
+  viewWidth: number;
+  viewHeight: number;
+};
+
+type ViewOrigin = {
+  left: number;
+  top: number;
+};
+
 const OSMD_BEAT_FACTOR = 4;
 const OSMD_HALFTONE_TO_MIDI_OFFSET = 12;
 const MAX_CURSOR_STEPS = 12_000;
@@ -76,7 +88,8 @@ function visibleCursorElement(view: HTMLDivElement): HTMLElement | undefined {
 
 function cursorPointInView(
   view: HTMLDivElement,
-  contentOffset: number,
+  viewOrigin: ViewOrigin,
+  contentOffset: ScoreOffset,
 ): { x: number; y: number } | undefined {
   const cursor = visibleCursorElement(view);
   if (!cursor) {
@@ -84,21 +97,21 @@ function cursorPointInView(
   }
 
   const cursorBox = cursor.getBoundingClientRect();
-  const viewBox = view.getBoundingClientRect();
 
   return {
-    x: cursorBox.left - viewBox.left + contentOffset,
-    y: cursorBox.top - viewBox.top + view.scrollTop,
+    x: cursorBox.left - viewOrigin.left + contentOffset.x,
+    y: cursorBox.top - viewOrigin.top + view.scrollTop + contentOffset.y,
   };
 }
 
 function pointForGraphicalNotes(
   notes: ColorableGraphicalNote[],
   view: HTMLDivElement,
-  contentOffset: number,
+  viewOrigin: ViewOrigin,
+  contentOffset: ScoreOffset,
 ): { x: number; y: number } | undefined {
   const boxes = notes
-    .map((note) => noteHeadBoxInView(note, view, contentOffset))
+    .map((note) => noteHeadBoxInView(note, view, viewOrigin, contentOffset))
     .filter((box): box is NoteHeadBox => Boolean(box));
   if (boxes.length === 0) {
     return undefined;
@@ -117,7 +130,7 @@ function collectScorePosition(
   cursors: OSMDInstance["cursors"],
   primaryCursor: OSMDInstance["cursor"],
   view: HTMLDivElement,
-  contentOffset: number,
+  contentOffset: ScoreOffset,
   positions: ScorePosition[],
   seenBeats: Set<string>,
 ): void {
@@ -126,8 +139,10 @@ function collectScorePosition(
   const notes = Array.from(
     new Set(cursors.flatMap((cursor) => cursor.GNotesUnderCursor() as ColorableGraphicalNote[])),
   );
+  const viewOrigin = view.getBoundingClientRect();
   const point =
-    pointForGraphicalNotes(notes, view, contentOffset) ?? cursorPointInView(view, contentOffset);
+    pointForGraphicalNotes(notes, view, viewOrigin, contentOffset) ??
+    cursorPointInView(view, viewOrigin, contentOffset);
   if (!point || seenBeats.has(beatKey)) {
     return;
   }
@@ -136,12 +151,15 @@ function collectScorePosition(
   positions.push({ beat, x: point.x, y: point.y, notes });
 }
 
-function scoreRowAnchors(view: HTMLDivElement): number[] {
+function scoreRowAnchors(view: HTMLDivElement, contentOffset: ScoreOffset): number[] {
   const viewBox = view.getBoundingClientRect();
   const staffTops = (
     Array.from(view.querySelectorAll(".score-canvas svg .staffline")) as HTMLElement[]
   )
-    .map((element) => element.getBoundingClientRect().top - viewBox.top + view.scrollTop)
+    .map(
+      (element) =>
+        element.getBoundingClientRect().top - viewBox.top + view.scrollTop + contentOffset.y,
+    )
     .filter((top) => Number.isFinite(top))
     .toSorted((first, second) => first - second);
 
@@ -164,12 +182,16 @@ function scoreRowAnchors(view: HTMLDivElement): number[] {
   return rows;
 }
 
-function normalizeScoreRows(positions: ScorePosition[], view: HTMLDivElement): ScorePosition[] {
+function normalizeScoreRows(
+  positions: ScorePosition[],
+  view: HTMLDivElement,
+  contentOffset: ScoreOffset,
+): ScorePosition[] {
   if (positions.length === 0) {
     return positions;
   }
 
-  const rows = scoreRowAnchors(view);
+  const rows = scoreRowAnchors(view, contentOffset);
   if (rows.length === 0) {
     return positions;
   }
@@ -207,7 +229,7 @@ function schedulePositionBuild(callback: (deadline?: IdleDeadline) => void): () 
 function startScorePositionBuild(
   osmd: OSMDInstance,
   view: HTMLDivElement,
-  resetContentOffset: () => void,
+  getContentOffset: () => ScoreOffset,
   onComplete: (positions: ScorePosition[]) => void,
 ): () => void {
   const cursors = osmd.cursors.length > 0 ? osmd.cursors : [osmd.cursor];
@@ -218,8 +240,6 @@ function startScorePositionBuild(
   let steps = 0;
   let cancelSchedule: (() => void) | undefined;
 
-  resetContentOffset();
-  view.scrollLeft = 0;
   for (const cursor of cursors) {
     cursor.reset();
     cursor.hide();
@@ -230,7 +250,7 @@ function startScorePositionBuild(
       return;
     }
 
-    resetContentOffset();
+    const contentOffset = getContentOffset();
     let processed = 0;
     while (steps < MAX_CURSOR_STEPS && !primaryCursor.Iterator.EndReached) {
       if (deadline && processed > 0 && deadline.timeRemaining() < 4) {
@@ -240,7 +260,7 @@ function startScorePositionBuild(
         break;
       }
 
-      collectScorePosition(cursors, primaryCursor, view, 0, positions, seenBeats);
+      collectScorePosition(cursors, primaryCursor, view, contentOffset, positions, seenBeats);
       for (const cursor of cursors) {
         cursor.next();
       }
@@ -252,7 +272,7 @@ function startScorePositionBuild(
       for (const cursor of cursors) {
         cursor.hide();
       }
-      onComplete(normalizeScoreRows(positions, view));
+      onComplete(normalizeScoreRows(positions, view, getContentOffset()));
       return;
     }
 
@@ -354,7 +374,8 @@ function noteHeadElement(note: ColorableGraphicalNote): HTMLElement | undefined 
 function noteHeadBoxInView(
   note: ColorableGraphicalNote,
   view: HTMLDivElement,
-  contentOffset: number,
+  viewOrigin: ViewOrigin,
+  contentOffset: ScoreOffset,
 ): NoteHeadBox | undefined {
   const element = noteHeadElement(note);
   if (!element) {
@@ -362,11 +383,10 @@ function noteHeadBoxInView(
   }
 
   const box = element.getBoundingClientRect();
-  const viewBox = view.getBoundingClientRect();
 
   return {
-    x: box.left - viewBox.left + contentOffset,
-    y: box.top - viewBox.top + view.scrollTop,
+    x: box.left - viewOrigin.left + contentOffset.x,
+    y: box.top - viewOrigin.top + view.scrollTop + contentOffset.y,
     width: box.width,
     height: box.height,
   };
@@ -407,11 +427,13 @@ function buildScoreGlissandoOverlays(
   score: ScoreModel,
   positions: ScorePosition[],
   view: HTMLDivElement,
-  contentOffset: number,
+  contentOffset: ScoreOffset,
 ): ScoreGlissandoOverlay[] {
   if (positions.length === 0) {
     return [];
   }
+
+  const viewOrigin = view.getBoundingClientRect();
 
   return buildGlissandoSegments(score.notes).flatMap((segment) => {
     const startNote = findGraphicalNote(positions, segment.startBeat, segment.startMidi);
@@ -420,8 +442,8 @@ function buildScoreGlissandoOverlays(
       return [];
     }
 
-    const startBox = noteHeadBoxInView(startNote, view, contentOffset);
-    const endBox = noteHeadBoxInView(endNote, view, contentOffset);
+    const startBox = noteHeadBoxInView(startNote, view, viewOrigin, contentOffset);
+    const endBox = noteHeadBoxInView(endNote, view, viewOrigin, contentOffset);
     if (!startBox || !endBox) {
       return [];
     }
@@ -468,6 +490,15 @@ function renderGlissandoOverlays(
   }
 }
 
+function scoreBounds(view: HTMLDivElement, track: HTMLDivElement): ScoreBounds {
+  return {
+    scrollWidth: track.scrollWidth,
+    scrollHeight: track.scrollHeight,
+    viewWidth: view.clientWidth,
+    viewHeight: view.clientHeight,
+  };
+}
+
 export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewProps) {
   const viewRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -480,12 +511,27 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   const pendingPositionRef = useRef<number | undefined>(undefined);
   const animationFrameRef = useRef<number | undefined>(undefined);
   const scoreOffsetRef = useRef<ScoreOffset>({ x: 0, y: 0 });
+  const scoreBoundsRef = useRef<ScoreBounds>({
+    scrollHeight: 0,
+    scrollWidth: 0,
+    viewHeight: 0,
+    viewWidth: 0,
+  });
   const [error, setError] = useState<string | undefined>();
   const setScoreOffset = useCallback((offset: ScoreOffset) => {
     scoreOffsetRef.current = offset;
     if (trackRef.current) {
       trackRef.current.style.transform = `translate3d(${-offset.x}px, ${-offset.y}px, 0)`;
     }
+  }, []);
+  const refreshScoreBounds = useCallback(() => {
+    const view = viewRef.current;
+    const track = trackRef.current;
+    if (!view || !track) {
+      return;
+    }
+
+    scoreBoundsRef.current = scoreBounds(view, track);
   }, []);
 
   const updateScorePosition = useCallback(
@@ -498,16 +544,22 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
 
       const scorePositions = scorePositionsRef.current;
       const currentPosition = scorePositionForBeat(scorePositions, positionBeats);
-      const fallbackX = (positionBeats / score.totalBeats) * track.scrollWidth;
-      const maxScrollX = Math.max(0, track.scrollWidth - view.clientWidth);
-      const maxScrollY = Math.max(0, track.scrollHeight - view.clientHeight);
+      let bounds = scoreBoundsRef.current;
+      if (bounds.scrollWidth <= 0 || bounds.viewWidth <= 0) {
+        bounds = scoreBounds(view, track);
+        scoreBoundsRef.current = bounds;
+      }
+
+      const fallbackX = (positionBeats / score.totalBeats) * bounds.scrollWidth;
+      const maxScrollX = Math.max(0, bounds.scrollWidth - bounds.viewWidth);
+      const maxScrollY = Math.max(0, bounds.scrollHeight - bounds.viewHeight);
       const targetScrollX = Math.min(
         maxScrollX,
-        Math.max(0, (currentPosition?.x ?? fallbackX) - view.clientWidth * 0.42),
+        Math.max(0, (currentPosition?.x ?? fallbackX) - bounds.viewWidth * 0.42),
       );
       const targetScrollY = Math.min(
         maxScrollY,
-        Math.max(0, (currentPosition?.y ?? 0) - view.clientHeight * 0.42),
+        Math.max(0, (currentPosition?.y ?? 0) - bounds.viewHeight * 0.42),
       );
       if (
         Math.abs(scoreOffsetRef.current.x - targetScrollX) > 0.25 ||
@@ -562,6 +614,12 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     glissandoOverlay?.replaceChildren();
     osmdRef.current = null;
     scorePositionsRef.current = [];
+    scoreBoundsRef.current = {
+      scrollHeight: 0,
+      scrollWidth: 0,
+      viewHeight: 0,
+      viewWidth: 0,
+    };
     setScoreOffset({ x: 0, y: 0 });
     setError(undefined);
 
@@ -597,6 +655,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
             cursor.hide();
           }
           osmdRef.current = osmd;
+          refreshScoreBounds();
           const currentState = usePracticeStore.getState();
           updateScorePosition(
             sourceBeatAt(currentState.playbackEvents, currentState.positionBeats),
@@ -609,13 +668,14 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
           cancelPositionBuild = startScorePositionBuild(
             osmd,
             view,
-            () => setScoreOffset({ x: 0, y: 0 }),
+            () => scoreOffsetRef.current,
             (positions) => {
               if (cancelled || !viewRef.current) {
                 return;
               }
 
               scorePositionsRef.current = positions;
+              refreshScoreBounds();
               renderGlissandoOverlays(
                 glissandoOverlayRef.current,
                 trackRef.current,
@@ -623,7 +683,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
                   score,
                   positions,
                   viewRef.current,
-                  scoreOffsetRef.current.x,
+                  scoreOffsetRef.current,
                 ),
               );
               const latestState = usePracticeStore.getState();
@@ -655,12 +715,29 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       highlightedIndexRef.current = -1;
       setScoreOffset({ x: 0, y: 0 });
       scorePositionsRef.current = [];
+      scoreBoundsRef.current = {
+        scrollHeight: 0,
+        scrollWidth: 0,
+        viewHeight: 0,
+        viewWidth: 0,
+      };
       glissandoOverlay?.replaceChildren();
       osmdRef.current?.clear();
       osmdRef.current = null;
       container.innerHTML = "";
     };
-  }, [score, setScoreOffset, updateScorePosition]);
+  }, [refreshScoreBounds, score, setScoreOffset, updateScorePosition]);
+
+  useEffect(() => {
+    if (!active) {
+      return undefined;
+    }
+
+    refreshScoreBounds();
+    window.addEventListener("resize", refreshScoreBounds);
+
+    return () => window.removeEventListener("resize", refreshScoreBounds);
+  }, [active, refreshScoreBounds]);
 
   useEffect(() => {
     if (!score || !active) {
