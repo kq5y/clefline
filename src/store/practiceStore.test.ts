@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { usePracticeStore } from "./practiceStore";
+import { tempoAtPlaybackBeat, tempoAtSourceBeat, usePracticeStore } from "./practiceStore";
 
 const dsFineXml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="4.0">
@@ -93,5 +93,39 @@ describe("practiceStore seeking", () => {
 
     usePracticeStore.getState().seekByMeasures(-1);
     expect(usePracticeStore.getState().positionBeats).toBe(4);
+  });
+});
+
+describe("tempo resolution", () => {
+  it("uses tempo directions at the current source and playback beat", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>1</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <direction><sound tempo="90"/></direction>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+    </measure>
+    <measure number="2">
+      <direction><sound tempo="150"/></direction>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+    const store = usePracticeStore.getState();
+    store.loadXml(xml, "tempo-change.musicxml");
+    const state = usePracticeStore.getState();
+
+    expect(tempoAtSourceBeat(state.score, 0)).toBe(90);
+    expect(tempoAtSourceBeat(state.score, 1)).toBe(150);
+    expect(tempoAtPlaybackBeat(state.score, state.playbackEvents, 0)).toBe(90);
+    expect(tempoAtPlaybackBeat(state.score, state.playbackEvents, 1)).toBe(150);
   });
 });

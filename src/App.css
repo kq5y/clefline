@@ -519,7 +519,7 @@ input:focus-visible {
   width: max-content;
   min-width: 100%;
   min-height: 100%;
-  padding: 68px 58vw 24px 42vw;
+  padding: 68px 58vw 42vh 42vw;
   box-sizing: content-box;
 }
 

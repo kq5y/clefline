@@ -1,9 +1,9 @@
 import { memo, useEffect, useRef, useState, type RefObject } from "react";
 import {
   activePlaybackEventsAt,
-  initialTempo,
   latestPlaybackEventAt,
   sourceBeatAt,
+  tempoAtSourceBeat,
   usePracticeStore,
 } from "../store/practiceStore";
 import type { DirectionEvent, PlaybackEvent, ScoreModel } from "../lib/musicxml";
@@ -155,7 +155,7 @@ function metadataForState(state: PracticeSnapshot): Metadata | undefined {
     dynamic: currentDynamic(score, sourcePositionBeats),
     expression: currentExpression(score, sourcePositionBeats) ?? "-",
     labels: eventLabels(displayEvents),
-    tempo: `${Math.round(initialTempo(score))} BPM`,
+    tempo: `${Math.round(tempoAtSourceBeat(score, sourcePositionBeats))} BPM`,
     velocity: velocity === undefined ? "-" : `${velocity}%`,
   };
 }

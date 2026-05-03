@@ -25,6 +25,7 @@ type ColorableGraphicalNote = {
 type ScorePosition = {
   beat: number;
   x: number;
+  y: number;
   notes: ColorableGraphicalNote[];
 };
 
@@ -42,6 +43,11 @@ type ScoreGlissandoOverlay = {
   y1: number;
   y2: number;
   hand: string;
+};
+
+type ScoreOffset = {
+  x: number;
+  y: number;
 };
 
 const OSMD_BEAT_FACTOR = 4;
@@ -88,7 +94,10 @@ function visibleCursorElement(view: HTMLDivElement): HTMLElement | undefined {
   return cursor;
 }
 
-function cursorXInView(view: HTMLDivElement, contentOffset: number): number | undefined {
+function cursorPointInView(
+  view: HTMLDivElement,
+  contentOffset: number,
+): { x: number; y: number } | undefined {
   const cursor = visibleCursorElement(view);
   if (!cursor) {
     return undefined;
@@ -97,14 +106,17 @@ function cursorXInView(view: HTMLDivElement, contentOffset: number): number | un
   const cursorBox = cursor.getBoundingClientRect();
   const viewBox = view.getBoundingClientRect();
 
-  return cursorBox.left - viewBox.left + contentOffset;
+  return {
+    x: cursorBox.left - viewBox.left + contentOffset,
+    y: cursorBox.top - viewBox.top + view.scrollTop,
+  };
 }
 
-function xForGraphicalNotes(
+function pointForGraphicalNotes(
   notes: ColorableGraphicalNote[],
   view: HTMLDivElement,
   contentOffset: number,
-): number | undefined {
+): { x: number; y: number } | undefined {
   const boxes = notes
     .map((note) => noteHeadBoxInView(note, view, contentOffset))
     .filter((box): box is NoteHeadBox => Boolean(box));
@@ -112,7 +124,13 @@ function xForGraphicalNotes(
     return undefined;
   }
 
-  return boxes.reduce((left, box) => Math.min(left, box.x), Number.POSITIVE_INFINITY);
+  return boxes.reduce(
+    (point, box) => ({
+      x: Math.min(point.x, box.x),
+      y: Math.min(point.y, box.y),
+    }),
+    { x: Number.POSITIVE_INFINITY, y: Number.POSITIVE_INFINITY },
+  );
 }
 
 function collectScorePosition(
@@ -128,13 +146,14 @@ function collectScorePosition(
   const notes = Array.from(
     new Set(cursors.flatMap((cursor) => cursor.GNotesUnderCursor() as ColorableGraphicalNote[])),
   );
-  const x = xForGraphicalNotes(notes, view, contentOffset) ?? cursorXInView(view, contentOffset);
-  if (x === undefined || seenBeats.has(beatKey)) {
+  const point =
+    pointForGraphicalNotes(notes, view, contentOffset) ?? cursorPointInView(view, contentOffset);
+  if (!point || seenBeats.has(beatKey)) {
     return;
   }
 
   seenBeats.add(beatKey);
-  positions.push({ beat, x, notes });
+  positions.push({ beat, x: point.x, y: point.y, notes });
 }
 
 function schedulePositionBuild(callback: (deadline?: IdleDeadline) => void): () => void {
@@ -234,22 +253,22 @@ function positionIndexForBeat(positions: ScorePosition[], positionBeats: number)
   return match;
 }
 
-function xForBeat(
+function scorePositionForBeat(
   positions: ScorePosition[],
   positionBeats: number,
-): { index: number; x: number } | undefined {
+): { index: number; x: number; y: number } | undefined {
   if (positions.length === 0) {
     return undefined;
   }
 
   const index = positionIndexForBeat(positions, positionBeats);
   if (index < 0) {
-    return { index: 0, x: positions[0].x };
+    return { index: 0, x: positions[0].x, y: positions[0].y };
   }
   const current = positions[index];
   const next = positions[index + 1];
   if (!next) {
-    return { index, x: current.x };
+    return { index, x: current.x, y: current.y };
   }
 
   const progress = Math.min(
@@ -257,7 +276,11 @@ function xForBeat(
     Math.max(0, (positionBeats - current.beat) / Math.max(0.001, next.beat - current.beat)),
   );
 
-  return { index, x: current.x + (next.x - current.x) * progress };
+  return {
+    index,
+    x: current.x + (next.x - current.x) * progress,
+    y: current.y + (next.y - current.y) * progress,
+  };
 }
 
 function colorScoreNotes(notes: ColorableGraphicalNote[], color: string): void {
@@ -423,12 +446,12 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   const latestMeasureRef = useRef<string | undefined>(undefined);
   const pendingPositionRef = useRef<number | undefined>(undefined);
   const animationFrameRef = useRef<number | undefined>(undefined);
-  const scoreOffsetRef = useRef(0);
+  const scoreOffsetRef = useRef<ScoreOffset>({ x: 0, y: 0 });
   const [error, setError] = useState<string | undefined>();
-  const setScoreOffset = useCallback((offset: number) => {
+  const setScoreOffset = useCallback((offset: ScoreOffset) => {
     scoreOffsetRef.current = offset;
     if (trackRef.current) {
-      trackRef.current.style.transform = `translate3d(${-offset}px, 0, 0)`;
+      trackRef.current.style.transform = `translate3d(${-offset.x}px, ${-offset.y}px, 0)`;
     }
   }, []);
 
@@ -449,15 +472,23 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       }
 
       const scorePositions = scorePositionsRef.current;
-      const currentPosition = xForBeat(scorePositions, positionBeats);
+      const currentPosition = scorePositionForBeat(scorePositions, positionBeats);
       const fallbackX = (positionBeats / score.totalBeats) * track.scrollWidth;
-      const maxScroll = Math.max(0, track.scrollWidth - view.clientWidth);
-      const targetScroll = Math.min(
-        maxScroll,
+      const maxScrollX = Math.max(0, track.scrollWidth - view.clientWidth);
+      const maxScrollY = Math.max(0, track.scrollHeight - view.clientHeight);
+      const targetScrollX = Math.min(
+        maxScrollX,
         Math.max(0, (currentPosition?.x ?? fallbackX) - view.clientWidth * 0.42),
       );
-      if (Math.abs(scoreOffsetRef.current - targetScroll) > 0.25) {
-        setScoreOffset(targetScroll);
+      const targetScrollY = Math.min(
+        maxScrollY,
+        Math.max(0, (currentPosition?.y ?? 0) - view.clientHeight * 0.42),
+      );
+      if (
+        Math.abs(scoreOffsetRef.current.x - targetScrollX) > 0.25 ||
+        Math.abs(scoreOffsetRef.current.y - targetScrollY) > 0.25
+      ) {
+        setScoreOffset({ x: targetScrollX, y: targetScrollY });
       }
 
       const nextHighlightIndex = positionBeats < 0 ? -1 : (currentPosition?.index ?? -1);
@@ -507,7 +538,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     osmdRef.current = null;
     scorePositionsRef.current = [];
     latestMeasureRef.current = undefined;
-    setScoreOffset(0);
+    setScoreOffset({ x: 0, y: 0 });
     setError(undefined);
 
     void loadOsmd()
@@ -554,7 +585,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
           cancelPositionBuild = startScorePositionBuild(
             osmd,
             view,
-            () => setScoreOffset(0),
+            () => setScoreOffset({ x: 0, y: 0 }),
             (positions) => {
               if (cancelled || !viewRef.current) {
                 return;
@@ -568,7 +599,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
                   score,
                   positions,
                   viewRef.current,
-                  scoreOffsetRef.current,
+                  scoreOffsetRef.current.x,
                 ),
               );
               const latestState = usePracticeStore.getState();
@@ -595,7 +626,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       highlightedNotesRef.current = [];
       highlightedIndexRef.current = -1;
       latestMeasureRef.current = undefined;
-      setScoreOffset(0);
+      setScoreOffset({ x: 0, y: 0 });
       scorePositionsRef.current = [];
       glissandoOverlay?.replaceChildren();
       osmdRef.current?.clear();

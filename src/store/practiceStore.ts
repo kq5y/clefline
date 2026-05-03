@@ -60,7 +60,6 @@ const DEFAULT_SETTINGS: PracticeSettings = {
 };
 
 const ACTIVE_EVENT_LOOKBACK_BEATS = 16;
-const initialTempoCache = new WeakMap<ScoreModel, number>();
 const measureByNumberCache = new WeakMap<ScoreModel, Map<string, ScoreModel["measures"][number]>>();
 const performanceMeasuresCache = new WeakMap<
   ScoreModel,
@@ -70,6 +69,7 @@ const playbackStatsCache = new WeakMap<
   PlaybackEvent[],
   { endBeat: number; maxDurationBeats: number }
 >();
+const tempoChangesCache = new WeakMap<ScoreModel, Array<{ beat: number; tempo: number }>>();
 
 function eventsFor(score: ScoreModel, handMode: HandMode): PlaybackEvent[] {
   return buildPlaybackEvents(score, { handMode });
@@ -80,21 +80,63 @@ function playableHand(handMode: HandMode): Hand | "both" {
 }
 
 export function initialTempo(score?: ScoreModel): number {
+  return tempoAtSourceBeat(score, 0);
+}
+
+function tempoChanges(score: ScoreModel): Array<{ beat: number; tempo: number }> {
+  const cached = tempoChangesCache.get(score);
+  if (cached) {
+    return cached;
+  }
+
+  const changes = score.directions
+    .filter((direction) => direction.kind === "tempo")
+    .flatMap((direction) => {
+      const tempo = Number(direction.value);
+
+      return Number.isFinite(tempo) && tempo > 0 ? [{ beat: direction.beat, tempo }] : [];
+    })
+    .toSorted((first, second) => first.beat - second.beat);
+  tempoChangesCache.set(score, changes);
+
+  return changes;
+}
+
+export function tempoAtSourceBeat(score: ScoreModel | undefined, sourceBeat: number): number {
   if (!score) {
     return 120;
   }
 
-  const cached = initialTempoCache.get(score);
-  if (cached !== undefined) {
-    return cached;
+  const changes = tempoChanges(score);
+  if (changes.length === 0) {
+    return 120;
   }
 
-  const tempo = score?.directions.find((direction) => direction.kind === "tempo")?.value;
-  const resolvedTempo =
-    typeof tempo === "number" && Number.isFinite(tempo) && tempo > 0 ? tempo : 120;
-  initialTempoCache.set(score, resolvedTempo);
+  let low = 0;
+  let high = changes.length - 1;
+  let match = -1;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (changes[middle].beat <= Math.max(0, sourceBeat) + 0.0001) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  const resolvedTempo = changes[match]?.tempo ?? changes[0]?.tempo ?? 120;
 
   return resolvedTempo;
+}
+
+export function tempoAtPlaybackBeat(
+  score: ScoreModel | undefined,
+  events: PlaybackEvent[],
+  positionBeats: number,
+): number {
+  return tempoAtSourceBeat(score, sourceBeatAt(events, positionBeats));
 }
 
 function measureByNumber(score: ScoreModel, number: string | undefined) {

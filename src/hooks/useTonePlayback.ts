@@ -6,9 +6,11 @@ import {
   scheduleMidi,
 } from "../lib/audio/pianoEngine";
 import {
-  initialTempo,
   loopBounds,
   playbackEndBeat,
+  sourceBeatAt,
+  tempoAtPlaybackBeat,
+  tempoAtSourceBeat,
   type PracticeSettings,
   usePracticeStore,
 } from "../store/practiceStore";
@@ -48,6 +50,61 @@ function isMeasureStartBeat(beat: number): boolean {
   }
 
   return starts.has(beat.toFixed(3));
+}
+
+function beatRateForTempo(tempo: number, speed: number): number {
+  return Math.max(0.05, (tempo / 60) * speed);
+}
+
+function secondsBetweenPlaybackBeats(
+  score: ScoreModel,
+  events: PlaybackEvent[],
+  fromBeat: number,
+  toBeat: number,
+  speed: number,
+): number {
+  if (toBeat <= fromBeat) {
+    return 0;
+  }
+
+  let seconds = 0;
+  let cursor = fromBeat;
+  while (cursor < toBeat - 0.0001) {
+    const next = Math.min(toBeat, cursor + 0.25);
+    const sourceBeat = sourceBeatAt(events, cursor);
+    const tempo = tempoAtSourceBeat(score, sourceBeat);
+    seconds += (next - cursor) / beatRateForTempo(tempo, speed);
+    cursor = next;
+  }
+
+  return seconds;
+}
+
+function playbackBeatAfterSeconds(
+  score: ScoreModel,
+  events: PlaybackEvent[],
+  fromBeat: number,
+  seconds: number,
+  speed: number,
+  endLimit: number,
+): number {
+  let remainingSeconds = seconds;
+  let cursor = fromBeat;
+
+  while (remainingSeconds > 0 && cursor < endLimit - 0.0001) {
+    const tempo = tempoAtSourceBeat(score, sourceBeatAt(events, cursor));
+    const beatRate = beatRateForTempo(tempo, speed);
+    const maxStepBeats = Math.min(0.25, endLimit - cursor);
+    const maxStepSeconds = maxStepBeats / beatRate;
+    if (remainingSeconds <= maxStepSeconds) {
+      return cursor + remainingSeconds * beatRate;
+    }
+
+    remainingSeconds -= maxStepSeconds;
+    cursor += maxStepBeats;
+  }
+
+  return Math.min(cursor, endLimit);
 }
 
 export function audioScheduleEndBeat(
@@ -100,7 +157,10 @@ export function useTonePlayback(): void {
 
       try {
         const scheduleTime = window.performance.now();
-        const beatRate = (initialTempo(score) / 60) * state.settings.speed;
+        const beatRate = beatRateForTempo(
+          tempoAtPlaybackBeat(score, state.playbackEvents, state.positionBeats),
+          state.settings.speed,
+        );
         if (playbackEventsRef.current !== state.playbackEvents) {
           playbackEventsRef.current = state.playbackEvents;
           eventCursorRef.current = firstEventIndexAtOrAfter(
@@ -130,11 +190,17 @@ export function useTonePlayback(): void {
         const backend = await backendPromise;
         if (cancelled) return;
 
-        const beatSeconds = 1 / beatRate;
         const startBeat = state.positionBeats;
         const lookAheadSeconds = document.hidden ? HIDDEN_LOOK_AHEAD_SECONDS : LOOK_AHEAD_SECONDS;
         const endLimit = audioScheduleEndBeat(score, state.playbackEvents, state.settings);
-        const endBeat = Math.min(endLimit, startBeat + lookAheadSeconds * beatRate);
+        const endBeat = playbackBeatAfterSeconds(
+          score,
+          state.playbackEvents,
+          startBeat,
+          lookAheadSeconds,
+          state.settings.speed,
+          endLimit,
+        );
 
         if (state.settings.metronomeEnabled) {
           const firstBeat = Math.ceil(startBeat - 0.0001);
@@ -144,7 +210,15 @@ export function useTonePlayback(): void {
               continue;
             }
             scheduledRef.current.add(id);
-            const startTime = backend.Tone.now() + (beat - startBeat) * beatSeconds;
+            const startTime =
+              backend.Tone.now() +
+              secondsBetweenPlaybackBeats(
+                score,
+                state.playbackEvents,
+                startBeat,
+                beat,
+                state.settings.speed,
+              );
             const accented = isMeasureStartBeat(beat);
             void scheduleMetronomeClick(
               startTime,
@@ -173,14 +247,36 @@ export function useTonePlayback(): void {
           }
           scheduledRef.current.add(event.id);
           eventCursorRef.current = index + 1;
-          const startTime = backend.Tone.now() + (event.absoluteBeat - startBeat) * beatSeconds;
-          const duration = Math.max(0.05, event.durationBeats * beatSeconds * 0.92);
+          const startTime =
+            backend.Tone.now() +
+            secondsBetweenPlaybackBeats(
+              score,
+              state.playbackEvents,
+              startBeat,
+              event.absoluteBeat,
+              state.settings.speed,
+            );
+          const eventSeconds = secondsBetweenPlaybackBeats(
+            score,
+            state.playbackEvents,
+            event.absoluteBeat,
+            event.absoluteBeat + event.durationBeats,
+            state.settings.speed,
+          );
+          const rollOffsetSeconds = secondsBetweenPlaybackBeats(
+            score,
+            state.playbackEvents,
+            event.absoluteBeat,
+            event.absoluteBeat + event.rollOffsetBeats,
+            state.settings.speed,
+          );
+          const duration = Math.max(0.05, eventSeconds * 0.92);
           const velocity = Math.min(1, Math.max(0.05, event.velocity));
 
           for (const [noteIndex, note] of event.notes.entries()) {
             void scheduleMidi(
               note.midi,
-              startTime + noteIndex * event.rollOffsetBeats * beatSeconds,
+              startTime + noteIndex * rollOffsetSeconds,
               duration,
               velocity,
               state.settings.volume,

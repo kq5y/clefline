@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import {
-  initialTempo,
   loopBounds,
   playbackEndBeat,
+  tempoAtPlaybackBeat,
   usePracticeStore,
 } from "../store/practiceStore";
 
@@ -35,7 +35,7 @@ export function usePlaybackClock(): void {
         return;
       }
 
-      const tempo = initialTempo(currentScore);
+      const tempo = tempoAtPlaybackBeat(currentScore, state.playbackEvents, positionRef.current);
       const bounds = loopBounds(currentScore, state.settings);
       const beatRate = (tempo / 60) * state.settings.speed;
       const previous = lastFrame.current ?? now;
