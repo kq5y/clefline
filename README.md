@@ -6,16 +6,6 @@ switch to a notation view rendered by OpenSheetMusicDisplay.
 
 ![Clefline river view showing the Bach Minuet sample](docs/screenshot.png)
 
-## Stack
-
-- React 19, Vite 8, TypeScript 6
-- `pnpm` only for package management
-- `oxlint` for linting and `oxfmt` for formatting
-- OpenSheetMusicDisplay for notation rendering
-- Tone.js for browser audio playback. Piano playback uses Salamander Grand Piano sample URLs at
-  runtime, with no bundled audio files.
-- Vitest and Playwright for automated checks
-
 ## Commands
 
 ```sh
@@ -49,3 +39,8 @@ Staff 1 is treated as right hand and staff 2 as left hand. The parser detects
 ties, chords, grace notes, arpeggios, dynamics, wedges, articulations,
 glissando, octave shifts, and repeat-navigation markers. Repeat paths that
 cannot be expanded deterministically are surfaced as score warnings.
+
+## License
+
+Code is available under the MIT License. The bundled Bach Minuet sample declares
+`Public Domain (PianoXML typeset)` in its MusicXML rights metadata.
