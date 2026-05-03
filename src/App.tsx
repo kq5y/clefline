@@ -8,6 +8,7 @@ import { ScoreView } from "./components/ScoreView";
 import { usePlaybackClock } from "./hooks/usePlaybackClock";
 import { useTonePlayback } from "./hooks/useTonePlayback";
 import { ensurePianoEngine } from "./lib/audio/pianoEngine";
+import { preloadOsmd } from "./lib/osmd";
 import { activeNotesAt, minimumPositionBeats, usePracticeStore } from "./store/practiceStore";
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -24,8 +25,21 @@ function isButtonTarget(target: EventTarget | null): boolean {
   );
 }
 
+function scheduleIdle(callback: () => void): () => void {
+  if (window.requestIdleCallback && window.cancelIdleCallback) {
+    const id = window.requestIdleCallback(callback, { timeout: 1_200 });
+
+    return () => window.cancelIdleCallback(id);
+  }
+
+  const id = window.setTimeout(callback, 300);
+
+  return () => window.clearTimeout(id);
+}
+
 function App() {
   const [dragActive, setDragActive] = useState(false);
+  const [scorePrepared, setScorePrepared] = useState(false);
   usePlaybackClock();
   useTonePlayback();
   const score = usePracticeStore((state) => state.score);
@@ -56,7 +70,7 @@ function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat || isTypingTarget(event.target)) {
+      if (isTypingTarget(event.target)) {
         return;
       }
 
@@ -71,7 +85,7 @@ function App() {
         return;
       }
 
-      if (event.code !== "Space" || isButtonTarget(event.target)) {
+      if (event.repeat || event.code !== "Space" || isButtonTarget(event.target)) {
         return;
       }
 
@@ -94,6 +108,35 @@ function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  useEffect(() => {
+    preloadOsmd();
+  }, []);
+
+  useEffect(() => {
+    if (!score) {
+      setScorePrepared(false);
+      return undefined;
+    }
+
+    const cancel = scheduleIdle(() => {
+      const state = usePracticeStore.getState();
+      if (state.score === score && !state.isPlaying) {
+        setScorePrepared(true);
+      }
+    });
+
+    return cancel;
+  }, [score]);
+
+  useEffect(() => {
+    if (settings.viewMode === "score") {
+      setScorePrepared(true);
+    }
+  }, [settings.viewMode]);
+
+  const scoreVisible = settings.viewMode === "score";
+  const shouldMountScore = scoreVisible || scorePrepared;
+
   return (
     <main
       className={dragActive ? "app-shell drag-active" : "app-shell"}
@@ -111,7 +154,7 @@ function App() {
           playbackEvents={playbackEvents}
           positionBeats={positionBeats}
         />
-        {settings.viewMode === "river" ? (
+        <div className={scoreVisible ? "viewer-layer inactive" : "viewer-layer active"}>
           <NoteRiver
             score={score}
             positionBeats={positionBeats}
@@ -120,9 +163,12 @@ function App() {
             showMeasureLines={settings.showMeasureLines}
             showNoteNames={settings.showNoteNames}
           />
-        ) : (
-          <ScoreView playbackEvents={playbackEvents} score={score} positionBeats={positionBeats} />
-        )}
+        </div>
+        {shouldMountScore ? (
+          <div className={scoreVisible ? "viewer-layer active" : "viewer-layer inactive"}>
+            <ScoreView active={scoreVisible} score={score} />
+          </div>
+        ) : null}
       </section>
       <section className="keyboard-shell" aria-label="Piano keyboard">
         <PianoKeyboard

@@ -73,6 +73,22 @@ describe("parseMusicXml", () => {
         <type>quarter</type>
         <staff>1</staff>
       </note>
+      <note>
+        <pitch><step>G</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+        <staff>1</staff>
+        <notations><glissando type="start" number="1"/></notations>
+      </note>
+      <note>
+        <pitch><step>C</step><octave>5</octave></pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+        <staff>1</staff>
+        <notations><glissando type="stop" number="1"/></notations>
+      </note>
     </measure>
   </part>
 </score-partwise>`;
@@ -85,5 +101,8 @@ describe("parseMusicXml", () => {
     expect(grace?.notes).toHaveLength(1);
     expect(arpeggio?.rollOffsetBeats).toBeGreaterThan(0);
     expect(arpeggio?.notes.map((note) => note.pitchName)).toEqual(["C4", "E4"]);
+    expect(
+      score.notes.filter((note) => note.notations.some((n) => n.type === "glissando")),
+    ).toHaveLength(2);
   });
 });

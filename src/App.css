@@ -47,6 +47,20 @@
   background: linear-gradient(180deg, rgb(78 117 145 / 14%), transparent 52%), var(--viewer);
 }
 
+.viewer-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.viewer-layer.inactive {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.viewer-layer.active {
+  visibility: visible;
+}
+
 .progress-track {
   position: absolute;
   z-index: 3;
@@ -181,6 +195,27 @@
 .note-release {
   opacity: 0.78;
   stroke-width: 3.2px;
+}
+
+.glissando-line {
+  vector-effect: non-scaling-stroke;
+  fill: none;
+  stroke: rgb(247 250 255 / 78%);
+  stroke-dasharray: 4 3;
+  stroke-linecap: round;
+  stroke-width: 2.6px;
+}
+
+.glissando-line.right {
+  stroke: #ffd0ad;
+}
+
+.glissando-line.left {
+  stroke: #a8f7ef;
+}
+
+.glissando-line.unknown {
+  stroke: #ffe39a;
 }
 
 .current-readout {

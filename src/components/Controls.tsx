@@ -14,7 +14,14 @@ import {
   Waves,
   X,
 } from "lucide-react";
-import { useState, type ChangeEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from "react";
 import { ensurePianoEngine } from "../lib/audio/pianoEngine";
 import {
   activeMidiAt,
@@ -30,6 +37,8 @@ const EMPTY_PLAYBACK_EVENTS: PlaybackEvent[] = [];
 export function Controls() {
   const [openPanel, setOpenPanel] = useState<"info" | "practice" | undefined>();
   const [audioLoading, setAudioLoading] = useState(false);
+  const repeatDelayRef = useRef<number | undefined>(undefined);
+  const repeatIntervalRef = useRef<number | undefined>(undefined);
   const score = usePracticeStore((state) => state.score);
   const loadedName = usePracticeStore((state) => state.loadedName);
   const isLoading = usePracticeStore((state) => state.isLoading);
@@ -76,6 +85,39 @@ export function Controls() {
       setAudioLoading(false);
     }
   };
+  const stopMeasureRepeat = useCallback(() => {
+    if (repeatDelayRef.current !== undefined) {
+      window.clearTimeout(repeatDelayRef.current);
+      repeatDelayRef.current = undefined;
+    }
+    if (repeatIntervalRef.current !== undefined) {
+      window.clearInterval(repeatIntervalRef.current);
+      repeatIntervalRef.current = undefined;
+    }
+  }, []);
+  const startMeasureRepeat = useCallback(
+    (delta: number) => {
+      stopMeasureRepeat();
+      seekByMeasures(delta);
+      repeatDelayRef.current = window.setTimeout(() => {
+        repeatIntervalRef.current = window.setInterval(() => seekByMeasures(delta), 130);
+      }, 330);
+    },
+    [seekByMeasures, stopMeasureRepeat],
+  );
+  const onMeasureButtonKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>, delta: number) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+
+      event.preventDefault();
+      seekByMeasures(delta);
+    },
+    [seekByMeasures],
+  );
+
+  useEffect(() => stopMeasureRepeat, [stopMeasureRepeat]);
 
   return (
     <>
@@ -107,9 +149,17 @@ export function Controls() {
           <button
             type="button"
             className="round-button"
-            onClick={() => seekByMeasures(-1)}
+            onBlur={stopMeasureRepeat}
             disabled={!score}
             aria-label="Previous measure"
+            onKeyDown={(event) => onMeasureButtonKeyDown(event, -1)}
+            onPointerCancel={stopMeasureRepeat}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              startMeasureRepeat(-1);
+            }}
+            onPointerLeave={stopMeasureRepeat}
+            onPointerUp={stopMeasureRepeat}
             title="Previous measure"
           >
             <SkipBack size={17} />
@@ -117,9 +167,17 @@ export function Controls() {
           <button
             type="button"
             className="round-button"
-            onClick={() => seekByMeasures(1)}
+            onBlur={stopMeasureRepeat}
             disabled={!score}
             aria-label="Next measure"
+            onKeyDown={(event) => onMeasureButtonKeyDown(event, 1)}
+            onPointerCancel={stopMeasureRepeat}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              startMeasureRepeat(1);
+            }}
+            onPointerLeave={stopMeasureRepeat}
+            onPointerUp={stopMeasureRepeat}
             title="Next measure"
           >
             <SkipForward size={17} />

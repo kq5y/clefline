@@ -7,8 +7,8 @@ import {
 } from "../lib/audio/pianoEngine";
 import { initialTempo, loopBounds, usePracticeStore } from "../store/practiceStore";
 
-const SCHEDULE_INTERVAL_MS = 16;
-const LOOK_AHEAD_SECONDS = 0.08;
+const SCHEDULE_INTERVAL_MS = 25;
+const LOOK_AHEAD_SECONDS = 0.2;
 const HIDDEN_LOOK_AHEAD_SECONDS = 2.2;
 
 function isMeasureStartBeat(beat: number): boolean {
@@ -20,6 +20,8 @@ function isMeasureStartBeat(beat: number): boolean {
 
 export function useTonePlayback(): void {
   const scheduledRef = useRef<Set<string>>(new Set());
+  const eventCursorRef = useRef(0);
+  const playbackEventsRef = useRef(usePracticeStore.getState().playbackEvents);
   const previousPositionRef = useRef(0);
   const wasPlayingRef = useRef(false);
   const isPlaying = usePracticeStore((state) => state.isPlaying);
@@ -27,6 +29,7 @@ export function useTonePlayback(): void {
   useEffect(() => {
     if (!isPlaying) {
       scheduledRef.current.clear();
+      eventCursorRef.current = 0;
       previousPositionRef.current = usePracticeStore.getState().positionBeats;
       if (wasPlayingRef.current) {
         void releaseAllPianoKeys();
@@ -44,7 +47,14 @@ export function useTonePlayback(): void {
         return;
       }
 
+      if (playbackEventsRef.current !== state.playbackEvents) {
+        playbackEventsRef.current = state.playbackEvents;
+        eventCursorRef.current = 0;
+        scheduledRef.current.clear();
+      }
+
       if (Math.abs(state.positionBeats - previousPositionRef.current) > 0.35) {
+        eventCursorRef.current = 0;
         scheduledRef.current.clear();
       }
       previousPositionRef.current = state.positionBeats;
@@ -80,22 +90,33 @@ export function useTonePlayback(): void {
         }
       }
 
-      for (const event of state.playbackEvents) {
-        if (event.absoluteBeat < startBeat || event.absoluteBeat >= endBeat) {
-          continue;
+      const events = state.playbackEvents;
+      while (
+        eventCursorRef.current < events.length &&
+        events[eventCursorRef.current].absoluteBeat < startBeat - 0.001
+      ) {
+        eventCursorRef.current += 1;
+      }
+
+      for (let index = eventCursorRef.current; index < events.length; index += 1) {
+        const event = events[index];
+        if (event.absoluteBeat >= endBeat) {
+          break;
         }
         if (scheduledRef.current.has(event.id)) {
+          eventCursorRef.current = index + 1;
           continue;
         }
         scheduledRef.current.add(event.id);
+        eventCursorRef.current = index + 1;
         const startTime = backend.Tone.now() + (event.absoluteBeat - startBeat) * beatSeconds;
         const duration = Math.max(0.05, event.durationBeats * beatSeconds * 0.92);
         const velocity = Math.min(1, Math.max(0.05, event.velocity));
 
-        for (const [index, note] of event.notes.entries()) {
+        for (const [noteIndex, note] of event.notes.entries()) {
           void scheduleMidi(
             note.midi,
-            startTime + index * event.rollOffsetBeats * beatSeconds,
+            startTime + noteIndex * event.rollOffsetBeats * beatSeconds,
             duration,
             velocity,
             state.settings.volume,

@@ -13,6 +13,8 @@ const ARTICULATION_LABELS: Record<string, string> = {
   accent: "Accent",
   arpeggiate: "Arp.",
   grace: "Grace",
+  glissando: "Gliss.",
+  slide: "Slide",
   staccatissimo: "Stacc.",
   staccato: "Stacc.",
   "strong-accent": "Marc.",

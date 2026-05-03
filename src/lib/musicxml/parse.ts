@@ -143,7 +143,12 @@ function parseNotations(note: Element): {
 
       if (notation.tagName === "technical") {
         for (const child of elements(notation)) {
-          if (child.tagName !== "arpeggiate" && child.tagName !== "non-arpeggiate") {
+          if (
+            child.tagName !== "arpeggiate" &&
+            child.tagName !== "non-arpeggiate" &&
+            child.tagName !== "glissando" &&
+            child.tagName !== "slide"
+          ) {
             continue;
           }
 
@@ -157,7 +162,11 @@ function parseNotations(note: Element): {
         continue;
       }
 
-      if (notation.tagName === "slur" || notation.tagName === "glissando") {
+      if (
+        notation.tagName === "slur" ||
+        notation.tagName === "glissando" ||
+        notation.tagName === "slide"
+      ) {
         notations.push({
           type: notation.tagName,
           value: attr(notation, "type"),
