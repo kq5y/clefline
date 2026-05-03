@@ -1,0 +1,188 @@
+import { create } from "zustand";
+import {
+  buildPlaybackEvents,
+  fetchMusicXml,
+  parseMusicXml,
+  readMusicXmlFile,
+  type Hand,
+  type PlaybackEvent,
+  type ScoreModel,
+} from "../lib/musicxml";
+
+export type ViewMode = "river" | "score";
+export type HandMode = "both" | "right" | "left";
+
+export type PracticeSettings = {
+  viewMode: ViewMode;
+  speed: number;
+  loopEnabled: boolean;
+  loopStartMeasure?: string;
+  loopEndMeasure?: string;
+  handMode: HandMode;
+  volume: number;
+  showNoteNames: boolean;
+};
+
+type PracticeState = {
+  score?: ScoreModel;
+  playbackEvents: PlaybackEvent[];
+  loadedName?: string;
+  isLoading: boolean;
+  loadError?: string;
+  isPlaying: boolean;
+  positionBeats: number;
+  settings: PracticeSettings;
+  loadXml: (xml: string, sourceName: string) => void;
+  loadFile: (file: File) => Promise<void>;
+  loadSample: () => Promise<void>;
+  setPlaying: (isPlaying: boolean) => void;
+  togglePlaying: () => void;
+  setPosition: (positionBeats: number) => void;
+  reset: () => void;
+  updateSettings: (patch: Partial<PracticeSettings>) => void;
+};
+
+const DEFAULT_SETTINGS: PracticeSettings = {
+  viewMode: "river",
+  speed: 0.75,
+  loopEnabled: false,
+  handMode: "both",
+  volume: 0.75,
+  showNoteNames: true,
+};
+
+function eventsFor(score: ScoreModel, handMode: HandMode): PlaybackEvent[] {
+  return buildPlaybackEvents(score, { handMode });
+}
+
+function playableHand(handMode: HandMode): Hand | "both" {
+  return handMode === "both" ? "both" : handMode;
+}
+
+export function initialTempo(score?: ScoreModel): number {
+  const tempo = score?.directions.find((direction) => direction.kind === "tempo")?.value;
+
+  return typeof tempo === "number" && Number.isFinite(tempo) && tempo > 0 ? tempo : 120;
+}
+
+export function loopBounds(score: ScoreModel | undefined, settings: PracticeSettings) {
+  if (!score || !settings.loopEnabled) {
+    return undefined;
+  }
+
+  const start = score.measures.find((measure) => measure.number === settings.loopStartMeasure);
+  const end = score.measures.find((measure) => measure.number === settings.loopEndMeasure);
+  if (!start || !end || end.startBeat < start.startBeat) {
+    return undefined;
+  }
+
+  return {
+    startBeat: start.startBeat,
+    endBeat: end.startBeat + end.durationBeats,
+  };
+}
+
+export function activeMidiAt(events: PlaybackEvent[], positionBeats: number): number[] {
+  return Array.from(
+    new Set(
+      events
+        .filter(
+          (event) =>
+            event.absoluteBeat <= positionBeats &&
+            event.absoluteBeat + Math.max(event.durationBeats, 0.1) > positionBeats,
+        )
+        .flatMap((event) => event.notes.map((note) => note.midi)),
+    ),
+  );
+}
+
+export const usePracticeStore = create<PracticeState>((set, get) => ({
+  playbackEvents: [],
+  isLoading: false,
+  isPlaying: false,
+  positionBeats: 0,
+  settings: DEFAULT_SETTINGS,
+
+  loadXml(xml, sourceName) {
+    const score = parseMusicXml(xml);
+    set({
+      score,
+      loadedName: sourceName,
+      playbackEvents: eventsFor(score, get().settings.handMode),
+      isLoading: false,
+      loadError: undefined,
+      isPlaying: false,
+      positionBeats: 0,
+    });
+  },
+
+  async loadFile(file) {
+    set({ isLoading: true, loadError: undefined });
+    try {
+      const loaded = await readMusicXmlFile(file);
+      get().loadXml(loaded.xml, loaded.sourceName);
+    } catch (error) {
+      set({
+        isLoading: false,
+        loadError: error instanceof Error ? error.message : "Failed to load MusicXML.",
+      });
+    }
+  },
+
+  async loadSample() {
+    set({ isLoading: true, loadError: undefined });
+    try {
+      const loaded = await fetchMusicXml("/samples/sample_science.musicxml");
+      get().loadXml(loaded.xml, "sample_science.musicxml");
+    } catch (error) {
+      set({
+        isLoading: false,
+        loadError: error instanceof Error ? error.message : "Failed to load the sample score.",
+      });
+    }
+  },
+
+  setPlaying(isPlaying) {
+    set({ isPlaying: isPlaying && Boolean(get().score) });
+  },
+
+  togglePlaying() {
+    const { isPlaying, score } = get();
+    set({ isPlaying: Boolean(score) && !isPlaying });
+  },
+
+  setPosition(positionBeats) {
+    const score = get().score;
+    const upper = score?.totalBeats ?? 0;
+    set({ positionBeats: Math.max(0, Math.min(positionBeats, upper)) });
+  },
+
+  reset() {
+    const bounds = loopBounds(get().score, get().settings);
+    set({ positionBeats: bounds?.startBeat ?? 0, isPlaying: false });
+  },
+
+  updateSettings(patch) {
+    const nextSettings = { ...get().settings, ...patch };
+    const score = get().score;
+    const playbackEvents = score ? eventsFor(score, nextSettings.handMode) : [];
+    const bounds = loopBounds(score, nextSettings);
+    const currentPosition = get().positionBeats;
+    const positionBeats =
+      bounds && (currentPosition < bounds.startBeat || currentPosition > bounds.endBeat)
+        ? bounds.startBeat
+        : currentPosition;
+
+    set({
+      settings: nextSettings,
+      playbackEvents,
+      positionBeats,
+    });
+  },
+}));
+
+export function handModeLabel(handMode: HandMode): string {
+  const hand = playableHand(handMode);
+
+  return hand === "both" ? "Both hands" : hand === "right" ? "Right hand" : "Left hand";
+}
