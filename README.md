@@ -4,6 +4,8 @@ Clefline is a fullscreen browser app for beginner piano practice. It loads
 MusicXML, shows a falling-note piano roll, highlights an 88-key keyboard, and can
 switch to a notation view rendered by OpenSheetMusicDisplay.
 
+![Clefline river view showing the Bach Minuet sample](docs/screenshot.png)
+
 ## Stack
 
 - React 19, Vite 8, TypeScript 6

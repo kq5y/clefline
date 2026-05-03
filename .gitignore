@@ -12,6 +12,7 @@ dist
 dist-ssr
 test-results
 playwright-report
+docs/screenshot-candidates/
 *.local
 
 # Package managers
