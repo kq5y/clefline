@@ -67,6 +67,9 @@ const OSMD_HALFTONE_TO_MIDI_OFFSET = 12;
 const MAX_CURSOR_STEPS = 12_000;
 const SCORE_ROW_GAP_PX = 140;
 const SCORE_ROW_WRAP_THRESHOLD_RATIO = 0.22;
+const HIGHLIGHT_UPDATE_INTERVAL_MS = 45;
+const POSITION_BUILD_MIN_IDLE_MS = 8;
+const POSITION_BUILD_FALLBACK_STEPS = 24;
 
 function visibleCursorElement(view: HTMLDivElement): HTMLElement | undefined {
   const cursor =
@@ -253,10 +256,10 @@ function startScorePositionBuild(
     const contentOffset = getContentOffset();
     let processed = 0;
     while (steps < MAX_CURSOR_STEPS && !primaryCursor.Iterator.EndReached) {
-      if (deadline && processed > 0 && deadline.timeRemaining() < 4) {
+      if (deadline && processed > 0 && deadline.timeRemaining() < POSITION_BUILD_MIN_IDLE_MS) {
         break;
       }
-      if (!deadline && processed >= 80) {
+      if (!deadline && processed >= POSITION_BUILD_FALLBACK_STEPS) {
         break;
       }
 
@@ -505,11 +508,13 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   const containerRef = useRef<HTMLDivElement | null>(null);
   const glissandoOverlayRef = useRef<SVGSVGElement | null>(null);
   const osmdRef = useRef<OSMDInstance | null>(null);
+  const activeRef = useRef(active);
   const scorePositionsRef = useRef<ScorePosition[]>([]);
   const highlightedNotesRef = useRef<ColorableGraphicalNote[]>([]);
   const highlightedIndexRef = useRef(-1);
-  const pendingPositionRef = useRef<number | undefined>(undefined);
+  const lastHighlightTimeRef = useRef(0);
   const animationFrameRef = useRef<number | undefined>(undefined);
+  const positionBuildCancelRef = useRef<(() => void) | undefined>(undefined);
   const scoreOffsetRef = useRef<ScoreOffset>({ x: 0, y: 0 });
   const scoreBoundsRef = useRef<ScoreBounds>({
     scrollHeight: 0,
@@ -518,6 +523,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     viewWidth: 0,
   });
   const [error, setError] = useState<string | undefined>();
+  activeRef.current = active;
   const setScoreOffset = useCallback((offset: ScoreOffset) => {
     scoreOffsetRef.current = offset;
     if (trackRef.current) {
@@ -535,7 +541,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   }, []);
 
   const updateScorePosition = useCallback(
-    (positionBeats: number) => {
+    (positionBeats: number, frameTime = window.performance.now()) => {
       const view = viewRef.current;
       const track = trackRef.current;
       if (!view || !track || !score || score.totalBeats <= 0) {
@@ -569,12 +575,19 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       }
 
       const nextHighlightIndex = positionBeats < 0 ? -1 : (currentPosition?.index ?? -1);
-      if (nextHighlightIndex !== highlightedIndexRef.current) {
+      const shouldUpdateHighlight =
+        nextHighlightIndex !== highlightedIndexRef.current &&
+        (nextHighlightIndex < 0 ||
+          highlightedIndexRef.current < 0 ||
+          nextHighlightIndex < highlightedIndexRef.current ||
+          frameTime - lastHighlightTimeRef.current >= HIGHLIGHT_UPDATE_INTERVAL_MS);
+      if (shouldUpdateHighlight) {
         colorScoreNotes(highlightedNotesRef.current, "#000000");
         const nextNotes =
           nextHighlightIndex >= 0 ? (scorePositions[nextHighlightIndex]?.notes ?? []) : [];
         highlightedNotesRef.current = nextNotes;
         highlightedIndexRef.current = nextHighlightIndex;
+        lastHighlightTimeRef.current = frameTime;
         if (nextNotes.length > 0) {
           colorScoreNotes(nextNotes, "#e05842");
         }
@@ -582,24 +595,39 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     },
     [score, setScoreOffset],
   );
-  const scheduleScorePosition = useCallback(
-    (positionBeats: number) => {
-      pendingPositionRef.current = positionBeats;
-      if (animationFrameRef.current !== undefined) {
-        return;
-      }
+  const startScorePositionIndexBuild = useCallback(() => {
+    const osmd = osmdRef.current;
+    const view = viewRef.current;
+    if (!osmd || !view || !score || scorePositionsRef.current.length > 0) {
+      return;
+    }
 
-      animationFrameRef.current = window.requestAnimationFrame(() => {
-        animationFrameRef.current = undefined;
-        const nextPosition = pendingPositionRef.current;
-        pendingPositionRef.current = undefined;
-        if (nextPosition !== undefined) {
-          updateScorePosition(nextPosition);
+    positionBuildCancelRef.current?.();
+    positionBuildCancelRef.current = startScorePositionBuild(
+      osmd,
+      view,
+      () => scoreOffsetRef.current,
+      (positions) => {
+        if (!viewRef.current) {
+          return;
         }
-      });
-    },
-    [updateScorePosition],
-  );
+
+        positionBuildCancelRef.current = undefined;
+        scorePositionsRef.current = positions;
+        refreshScoreBounds();
+        renderGlissandoOverlays(
+          glissandoOverlayRef.current,
+          trackRef.current,
+          buildScoreGlissandoOverlays(score, positions, viewRef.current, scoreOffsetRef.current),
+        );
+        const latestState = usePracticeStore.getState();
+        updateScorePosition(
+          sourceBeatAt(latestState.playbackEvents, latestState.positionBeats),
+          window.performance.now(),
+        );
+      },
+    );
+  }, [refreshScoreBounds, score, updateScorePosition]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -609,7 +637,6 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
 
     const glissandoOverlay = glissandoOverlayRef.current;
     let cancelled = false;
-    let cancelPositionBuild: (() => void) | undefined;
     container.innerHTML = "";
     glissandoOverlay?.replaceChildren();
     osmdRef.current = null;
@@ -659,39 +686,11 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
           const currentState = usePracticeStore.getState();
           updateScorePosition(
             sourceBeatAt(currentState.playbackEvents, currentState.positionBeats),
+            window.performance.now(),
           );
-          const view = viewRef.current;
-          if (!view) {
-            return;
+          if (activeRef.current) {
+            startScorePositionIndexBuild();
           }
-
-          cancelPositionBuild = startScorePositionBuild(
-            osmd,
-            view,
-            () => scoreOffsetRef.current,
-            (positions) => {
-              if (cancelled || !viewRef.current) {
-                return;
-              }
-
-              scorePositionsRef.current = positions;
-              refreshScoreBounds();
-              renderGlissandoOverlays(
-                glissandoOverlayRef.current,
-                trackRef.current,
-                buildScoreGlissandoOverlays(
-                  score,
-                  positions,
-                  viewRef.current,
-                  scoreOffsetRef.current,
-                ),
-              );
-              const latestState = usePracticeStore.getState();
-              updateScorePosition(
-                sourceBeatAt(latestState.playbackEvents, latestState.positionBeats),
-              );
-            },
-          );
         }
       })
       .catch((reason: unknown) => {
@@ -704,15 +703,16 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
 
     return () => {
       cancelled = true;
-      cancelPositionBuild?.();
+      positionBuildCancelRef.current?.();
+      positionBuildCancelRef.current = undefined;
       if (animationFrameRef.current !== undefined) {
         window.cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = undefined;
       }
-      pendingPositionRef.current = undefined;
       colorScoreNotes(highlightedNotesRef.current, "#000000");
       highlightedNotesRef.current = [];
       highlightedIndexRef.current = -1;
+      lastHighlightTimeRef.current = 0;
       setScoreOffset({ x: 0, y: 0 });
       scorePositionsRef.current = [];
       scoreBoundsRef.current = {
@@ -726,7 +726,13 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       osmdRef.current = null;
       container.innerHTML = "";
     };
-  }, [refreshScoreBounds, score, setScoreOffset, updateScorePosition]);
+  }, [
+    refreshScoreBounds,
+    score,
+    setScoreOffset,
+    startScorePositionIndexBuild,
+    updateScorePosition,
+  ]);
 
   useEffect(() => {
     if (!active) {
@@ -744,23 +750,25 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       return undefined;
     }
 
-    const currentState = usePracticeStore.getState();
-    scheduleScorePosition(sourceBeatAt(currentState.playbackEvents, currentState.positionBeats));
-    const unsubscribe = usePracticeStore.subscribe((nextState, previousState) => {
-      if (nextState.positionBeats !== previousState.positionBeats) {
-        scheduleScorePosition(sourceBeatAt(nextState.playbackEvents, nextState.positionBeats));
-      }
-    });
+    startScorePositionIndexBuild();
+    const frame = (frameTime: number) => {
+      const state = usePracticeStore.getState();
+      updateScorePosition(sourceBeatAt(state.playbackEvents, state.positionBeats), frameTime);
+      animationFrameRef.current = window.requestAnimationFrame(frame);
+    };
+    animationFrameRef.current = window.requestAnimationFrame(frame);
 
     return () => {
-      unsubscribe();
       if (animationFrameRef.current !== undefined) {
         window.cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = undefined;
       }
-      pendingPositionRef.current = undefined;
+      if (scorePositionsRef.current.length === 0) {
+        positionBuildCancelRef.current?.();
+        positionBuildCancelRef.current = undefined;
+      }
     };
-  }, [active, scheduleScorePosition, score]);
+  }, [active, score, startScorePositionIndexBuild, updateScorePosition]);
 
   if (!score) {
     return (
