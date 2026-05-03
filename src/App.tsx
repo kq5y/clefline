@@ -129,6 +129,7 @@ function App() {
       return undefined;
     }
 
+    setScorePrepared(false);
     const cancel = scheduleIdle(() => {
       const state = usePracticeStore.getState();
       if (state.score === score && !state.isPlaying) {

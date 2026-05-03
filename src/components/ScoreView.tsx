@@ -12,13 +12,27 @@ type ScoreViewProps = {
 };
 
 type ColorableGraphicalNote = {
+  getNoteheadSVGs?: () => HTMLElement[];
+  getSVGGElement?: () => SVGGElement;
   setColor: (color: string, options: Record<string, boolean>) => void;
+  sourceNote?: {
+    halfTone?: number;
+  };
+  vfnote?: [unknown, number];
+  vfnoteIndex?: number;
 };
 
 type ScorePosition = {
   beat: number;
   x: number;
   notes: ColorableGraphicalNote[];
+};
+
+type NoteHeadBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 
 type ScoreGlissandoOverlay = {
@@ -31,6 +45,7 @@ type ScoreGlissandoOverlay = {
 };
 
 const OSMD_BEAT_FACTOR = 4;
+const OSMD_HALFTONE_TO_MIDI_OFFSET = 12;
 const MAX_CURSOR_STEPS = 12_000;
 
 function currentMeasure(score: ScoreModel, positionBeats: number): string {
@@ -233,11 +248,69 @@ function colorScoreNotes(notes: ColorableGraphicalNote[], color: string): void {
   }
 }
 
-function staffY(staff: number, midi: number): number {
-  const staffBase = staff === 2 ? 63 : 39;
-  const pitchOffset = Math.max(-10, Math.min(10, (midi - 60) * -0.8));
+function noteHeadElement(note: ColorableGraphicalNote): HTMLElement | undefined {
+  try {
+    const noteheads = note.getNoteheadSVGs?.() ?? [];
+    const index = Math.max(
+      0,
+      Math.min(noteheads.length - 1, note.vfnoteIndex ?? note.vfnote?.[1] ?? 0),
+    );
 
-  return staffBase + pitchOffset;
+    return noteheads[index] ?? note.getSVGGElement?.();
+  } catch {
+    return undefined;
+  }
+}
+
+function noteHeadBoxInView(
+  note: ColorableGraphicalNote,
+  view: HTMLDivElement,
+): NoteHeadBox | undefined {
+  const element = noteHeadElement(note);
+  if (!element) {
+    return undefined;
+  }
+
+  const box = element.getBoundingClientRect();
+  const viewBox = view.getBoundingClientRect();
+
+  return {
+    x: box.left - viewBox.left + view.scrollLeft,
+    y: box.top - viewBox.top + view.scrollTop,
+    width: box.width,
+    height: box.height,
+  };
+}
+
+function graphicalMidi(note: ColorableGraphicalNote): number | undefined {
+  return typeof note.sourceNote?.halfTone === "number"
+    ? note.sourceNote.halfTone + OSMD_HALFTONE_TO_MIDI_OFFSET
+    : undefined;
+}
+
+function findGraphicalNote(
+  positions: ScorePosition[],
+  startBeat: number,
+  midi: number,
+): ColorableGraphicalNote | undefined {
+  const index = positionIndexForBeat(positions, startBeat);
+  const nearby = [index - 1, index, index + 1].filter(
+    (candidate) => candidate >= 0 && candidate < positions.length,
+  );
+
+  for (const candidate of nearby) {
+    const position = positions[candidate];
+    if (Math.abs(position.beat - startBeat) > 0.001) {
+      continue;
+    }
+
+    const match = position.notes.find((graphicalNote) => graphicalMidi(graphicalNote) === midi);
+    if (match) {
+      return match;
+    }
+  }
+
+  return undefined;
 }
 
 function buildScoreGlissandoOverlays(
@@ -245,21 +318,34 @@ function buildScoreGlissandoOverlays(
   positions: ScorePosition[],
   view: HTMLDivElement,
 ): ScoreGlissandoOverlay[] {
+  if (positions.length === 0) {
+    return [];
+  }
+
   return buildGlissandoSegments(score.notes).flatMap((segment) => {
-    const startX =
-      xForBeat(positions, segment.startBeat)?.x ??
-      (segment.startBeat / score.totalBeats) * view.scrollWidth;
-    const endX =
-      xForBeat(positions, segment.endBeat)?.x ??
-      (segment.endBeat / score.totalBeats) * view.scrollWidth;
+    const startNote = findGraphicalNote(positions, segment.startBeat, segment.startMidi);
+    const endNote = findGraphicalNote(positions, segment.endBeat, segment.endMidi);
+    if (!startNote || !endNote) {
+      return [];
+    }
+
+    const startBox = noteHeadBoxInView(startNote, view);
+    const endBox = noteHeadBoxInView(endNote, view);
+    if (!startBox || !endBox) {
+      return [];
+    }
+
+    const startCenterX = startBox.x + startBox.width / 2;
+    const endCenterX = endBox.x + endBox.width / 2;
+    const leftToRight = endCenterX >= startCenterX;
 
     return [
       {
         id: segment.id,
-        x1: startX,
-        x2: endX,
-        y1: staffY(segment.startNote.staff, segment.startMidi),
-        y2: staffY(segment.endNote.staff, segment.endMidi),
+        x1: leftToRight ? startBox.x + startBox.width : startBox.x,
+        x2: leftToRight ? endBox.x : endBox.x + endBox.width,
+        y1: startBox.y + startBox.height / 2,
+        y2: endBox.y + endBox.height / 2,
         hand: segment.hand,
       },
     ];
@@ -276,8 +362,8 @@ function renderGlissandoOverlays(
   }
 
   overlay.setAttribute("width", `${view.scrollWidth}`);
-  overlay.setAttribute("height", `${view.clientHeight}`);
-  overlay.setAttribute("viewBox", `0 0 ${view.scrollWidth} ${view.clientHeight}`);
+  overlay.setAttribute("height", `${view.scrollHeight}`);
+  overlay.setAttribute("viewBox", `0 0 ${view.scrollWidth} ${view.scrollHeight}`);
   overlay.replaceChildren();
 
   for (const segment of segments) {
@@ -285,8 +371,8 @@ function renderGlissandoOverlays(
     line.setAttribute("class", `score-glissando-line ${segment.hand}`);
     line.setAttribute("x1", `${segment.x1}`);
     line.setAttribute("x2", `${segment.x2}`);
-    line.setAttribute("y1", `${(segment.y1 / 100) * view.clientHeight}`);
-    line.setAttribute("y2", `${(segment.y2 / 100) * view.clientHeight}`);
+    line.setAttribute("y1", `${segment.y1}`);
+    line.setAttribute("y2", `${segment.y2}`);
     overlay.append(line);
   }
 }
@@ -346,9 +432,11 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       return undefined;
     }
 
+    const glissandoOverlay = glissandoOverlayRef.current;
     let cancelled = false;
     let cancelPositionBuild: (() => void) | undefined;
     container.innerHTML = "";
+    glissandoOverlay?.replaceChildren();
     osmdRef.current = null;
     scorePositionsRef.current = [];
     setError(undefined);
@@ -371,6 +459,10 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
           renderSingleHorizontalStaffline: true,
         });
         osmd.EngravingRules.RenderSingleHorizontalStaffline = true;
+        osmd.EngravingRules.RenderGlissandi = false;
+        osmd.EngravingRules.RehearsalMarkYOffsetDefault = 20;
+        osmd.EngravingRules.RehearsalMarkYOffsetAddedForRehearsalMarks = 0;
+        osmd.EngravingRules.RehearsalMarkFontSize = 11;
         osmd.Zoom = 0.92;
         await osmd.load(sanitizeScoreDisplayXml(score.rawXml));
         if (!cancelled) {
@@ -390,11 +482,6 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
             return;
           }
 
-          renderGlissandoOverlays(
-            glissandoOverlayRef.current,
-            view,
-            buildScoreGlissandoOverlays(score, [], view),
-          );
           cancelPositionBuild = startScorePositionBuild(osmd, view, (positions) => {
             if (cancelled || !viewRef.current) {
               return;
@@ -406,7 +493,10 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
               viewRef.current,
               buildScoreGlissandoOverlays(score, positions, viewRef.current),
             );
-            updateScorePosition(usePracticeStore.getState().positionBeats);
+            const latestState = usePracticeStore.getState();
+            updateScorePosition(
+              sourceBeatAt(latestState.playbackEvents, latestState.positionBeats),
+            );
           });
         }
       })
@@ -421,6 +511,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       highlightedNotesRef.current = [];
       highlightedIndexRef.current = -1;
       scorePositionsRef.current = [];
+      glissandoOverlay?.replaceChildren();
       osmdRef.current?.clear();
       osmdRef.current = null;
       container.innerHTML = "";

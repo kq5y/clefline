@@ -464,7 +464,7 @@ input:focus-visible {
   width: max-content;
   min-width: 100%;
   min-height: 100%;
-  padding: 18px 58vw 24px 42vw;
+  padding: 46px 58vw 24px 42vw;
   box-sizing: content-box;
 }
 
@@ -481,18 +481,10 @@ input:focus-visible {
 
 .score-glissando-line {
   fill: none;
-  stroke: #e05842;
-  stroke-dasharray: 7 5;
+  stroke: #252b33;
+  stroke-dasharray: 6 4;
   stroke-linecap: round;
-  stroke-width: 3px;
-}
-
-.score-glissando-line.left {
-  stroke: #2695a9;
-}
-
-.score-glissando-line.unknown {
-  stroke: #a57126;
+  stroke-width: 2.4px;
 }
 
 .score-playback-line {

@@ -209,8 +209,9 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
     const fourthMeasure = score.measures[Math.min(3, score.measures.length - 1)]?.number;
     const settings = {
       ...get().settings,
-      loopStartMeasure: get().settings.loopStartMeasure ?? firstMeasure,
-      loopEndMeasure: get().settings.loopEndMeasure ?? fourthMeasure ?? firstMeasure,
+      loopEnabled: false,
+      loopStartMeasure: firstMeasure,
+      loopEndMeasure: fourthMeasure ?? firstMeasure,
     };
     set({
       score,
@@ -225,7 +226,12 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
   },
 
   async loadFile(file) {
-    set({ isLoading: true, loadError: undefined });
+    set({
+      isLoading: true,
+      loadError: undefined,
+      isPlaying: false,
+      positionBeats: minimumPositionBeats(get().score),
+    });
     try {
       const loaded = await readMusicXmlFile(file);
       get().loadXml(loaded.xml, loaded.sourceName);
@@ -238,7 +244,12 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
   },
 
   async loadSample() {
-    set({ isLoading: true, loadError: undefined });
+    set({
+      isLoading: true,
+      loadError: undefined,
+      isPlaying: false,
+      positionBeats: minimumPositionBeats(get().score),
+    });
     try {
       const loaded = await fetchMusicXml("/samples/sample_science.musicxml");
       get().loadXml(loaded.xml, "sample_science.musicxml");
