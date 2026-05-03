@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("loads the public sample and switches between river and score views", async ({ page }) => {
+test("loads the public sample and switches between roll and score views", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Clefline" })).toBeVisible();
   await expect(page.getByLabel("Playback metadata")).toBeHidden();
@@ -23,7 +23,7 @@ test("loads the public sample and switches between river and score views", async
   await expect(page.locator(".score-canvas svg").first()).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".score-playback-line")).toBeVisible();
 
-  await page.getByRole("button", { name: "River", exact: true }).click();
+  await page.getByRole("button", { name: "Roll", exact: true }).click();
   await expect(page.getByLabel("Falling notes")).toBeVisible();
   await expect(page.locator(".note-river canvas")).toBeVisible();
 });

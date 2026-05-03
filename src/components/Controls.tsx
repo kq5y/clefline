@@ -207,7 +207,7 @@ export const Controls = memo(function Controls() {
               onClick={() => updateSettings({ viewMode: "river" })}
             >
               <Waves size={15} />
-              River
+              Roll
             </button>
             <button
               type="button"
@@ -302,7 +302,7 @@ export const Controls = memo(function Controls() {
               <span>{Math.round(settings.speed * 100)}%</span>
             </label>
             <label className="slider-control stacked">
-              River zoom
+              Roll zoom
               <input
                 max="2"
                 min="0.6"
