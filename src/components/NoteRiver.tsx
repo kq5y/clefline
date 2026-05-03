@@ -26,6 +26,7 @@ const SPAWN_Y = 18;
 const STRIKE_Y = 100;
 const VIEWBOX_HEIGHT = STRIKE_Y + SPAWN_Y;
 const VIEWBOX_TOP = -SPAWN_Y;
+const MIN_NOTE_HEIGHT_Y = 1.2;
 
 type MeasureMarker = {
   index: number;
@@ -73,10 +74,6 @@ function includeVisual(handMode: HandMode, hand: string): boolean {
 
 function yForBeat(beat: number, positionBeats: number, lookAheadBeats: number): number {
   return STRIKE_Y - ((beat - positionBeats) / lookAheadBeats) * STRIKE_Y;
-}
-
-function clampVisibleY(value: number): number {
-  return Math.min(STRIKE_Y, Math.max(VIEWBOX_TOP, value));
 }
 
 function yToPercent(value: number): number {
@@ -434,18 +431,18 @@ export const NoteRiver = memo(function NoteRiver({
                 opacity={selected ? 1 : 0.18}
                 x1={segment.startX}
                 x2={segment.endX}
-                y1={Math.min(STRIKE_Y, Math.max(0, startY))}
-                y2={Math.min(STRIKE_Y, Math.max(0, endY))}
+                y1={startY}
+                y2={endY}
               />
             );
           })}
           {notes.map(({ className, durationBeats, layout, note, rx, startBeat, x }) => {
             const startY = yForBeat(startBeat, windowBeat, lookAheadBeats);
             const endY = yForBeat(startBeat + durationBeats, windowBeat, lookAheadBeats);
-            const top = clampVisibleY(Math.min(startY, endY));
-            const bottom = Math.min(STRIKE_Y, Math.max(startY, endY));
-            const height = Math.max(1.2, bottom - top);
-            const attackY = Math.min(STRIKE_Y, Math.max(0, startY));
+            const top = Math.min(startY, endY);
+            const bottom = Math.max(startY, endY);
+            const height = Math.max(MIN_NOTE_HEIGHT_Y, bottom - top);
+            const releaseY = endY;
             const selected = includeVisual(handMode, note.hand);
             return (
               <g className="river-note-group" key={note.id} opacity={selected ? 1 : 0.18}>
@@ -463,15 +460,15 @@ export const NoteRiver = memo(function NoteRiver({
                   className="note-release"
                   x1={x}
                   x2={x + layout.noteWidthPercent}
-                  y1={top}
-                  y2={top}
+                  y1={releaseY}
+                  y2={releaseY}
                 />
                 <line
                   className="note-attack"
                   x1={x}
                   x2={x + layout.noteWidthPercent}
-                  y1={attackY}
-                  y2={attackY}
+                  y1={startY}
+                  y2={startY}
                 />
               </g>
             );
