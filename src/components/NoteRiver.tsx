@@ -1,5 +1,6 @@
 import { memo, useMemo } from "react";
 import { pianoKeyLayoutForMidi } from "../lib/pianoLayout";
+import { buildGlissandoSegments } from "../lib/musicxml/glissando";
 import { minimumPositionBeats, type HandMode } from "../store/practiceStore";
 import type { NoteEvent, ScoreModel } from "../lib/musicxml";
 
@@ -20,15 +21,6 @@ type MeasureMarker = {
   index: number;
   number: string;
   startBeat: number;
-};
-
-type GlissandoSegment = {
-  id: string;
-  hand: string;
-  startBeat: number;
-  endBeat: number;
-  startMidi: number;
-  endMidi: number;
 };
 
 function includeVisual(handMode: HandMode, hand: string): boolean {
@@ -61,48 +53,6 @@ function visualDurationBeats(note: NoteEvent): number {
   }
 
   return isLongGrace(note) ? Math.max(0.24, Math.min(note.durationBeats || 0.28, 0.45)) : 0.14;
-}
-
-function glissandoNotation(note: NoteEvent, type: "start" | "stop") {
-  return note.notations.find(
-    (notation) =>
-      (notation.type === "glissando" || notation.type === "slide") && notation.value === type,
-  );
-}
-
-function glissandoKey(note: NoteEvent, number: string | undefined): string {
-  return `${number ?? "1"}:${note.staff}:${note.voice}`;
-}
-
-function buildGlissandoSegments(notes: NoteEvent[]): GlissandoSegment[] {
-  const starts = new Map<string, NoteEvent>();
-  const segments: GlissandoSegment[] = [];
-
-  for (const note of notes) {
-    const stop = glissandoNotation(note, "stop");
-    if (stop) {
-      const key = glissandoKey(note, stop.number);
-      const start = starts.get(key);
-      if (start) {
-        segments.push({
-          id: `${start.id}-${note.id}`,
-          hand: start.hand === note.hand ? note.hand : "unknown",
-          startBeat: visualStartBeat(start),
-          endBeat: visualStartBeat(note),
-          startMidi: start.midi,
-          endMidi: note.midi,
-        });
-        starts.delete(key);
-      }
-    }
-
-    const start = glissandoNotation(note, "start");
-    if (start) {
-      starts.set(glissandoKey(note, start.number), note);
-    }
-  }
-
-  return segments;
 }
 
 export const NoteRiver = memo(function NoteRiver({
@@ -188,8 +138,12 @@ export const NoteRiver = memo(function NoteRiver({
         {glissandoSegments.map((segment) => {
           const startLayout = pianoKeyLayoutForMidi(segment.startMidi);
           const endLayout = pianoKeyLayoutForMidi(segment.endMidi);
-          const startY = yForBeat(segment.startBeat, positionBeats, lookAheadBeats);
-          const endY = yForBeat(segment.endBeat, positionBeats, lookAheadBeats);
+          const startY = yForBeat(
+            visualStartBeat(segment.startNote),
+            positionBeats,
+            lookAheadBeats,
+          );
+          const endY = yForBeat(visualStartBeat(segment.endNote), positionBeats, lookAheadBeats);
           const selected = includeVisual(handMode, segment.hand);
 
           return (

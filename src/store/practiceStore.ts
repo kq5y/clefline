@@ -97,9 +97,63 @@ export function minimumPositionBeats(score?: ScoreModel): number {
   return score ? -leadInBeats(score) : 0;
 }
 
-function clampPosition(score: ScoreModel | undefined, positionBeats: number): number {
+export function playbackEndBeat(score: ScoreModel | undefined, events: PlaybackEvent[]): number {
+  if (!score) {
+    return 0;
+  }
+
+  const eventEnd = events.reduce(
+    (endBeat, event) => Math.max(endBeat, event.absoluteBeat + event.durationBeats),
+    0,
+  );
+
+  return Math.max(0, eventEnd || score.totalBeats);
+}
+
+export function sourceBeatAt(events: PlaybackEvent[], positionBeats: number): number {
+  if (positionBeats < 0 || events.length === 0) {
+    return positionBeats;
+  }
+
+  let low = 0;
+  let high = events.length - 1;
+  let match = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (events[middle].absoluteBeat <= positionBeats) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  if (match < 0) {
+    return positionBeats;
+  }
+
+  const current = events[match];
+  const next = events[match + 1];
+  const delta = positionBeats - current.absoluteBeat;
+  if (!next || next.absoluteBeat <= current.absoluteBeat) {
+    return current.sourceStartBeat + delta;
+  }
+
+  const projected = current.sourceStartBeat + delta;
+  if (next.sourceStartBeat >= current.sourceStartBeat) {
+    return Math.min(projected, next.sourceStartBeat);
+  }
+
+  return projected;
+}
+
+function clampPosition(
+  score: ScoreModel | undefined,
+  events: PlaybackEvent[],
+  positionBeats: number,
+): number {
   const lower = minimumPositionBeats(score);
-  const upper = score?.totalBeats ?? 0;
+  const upper = playbackEndBeat(score, events);
 
   return Math.max(lower, Math.min(positionBeats, upper));
 }
@@ -206,8 +260,8 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
   },
 
   setPosition(positionBeats) {
-    const score = get().score;
-    set({ positionBeats: clampPosition(score, positionBeats) });
+    const { playbackEvents, score } = get();
+    set({ positionBeats: clampPosition(score, playbackEvents, positionBeats) });
   },
 
   seekByMeasures(delta) {
@@ -216,7 +270,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       return;
     }
 
-    const currentPosition = get().positionBeats;
+    const currentPosition = sourceBeatAt(get().playbackEvents, get().positionBeats);
     const lower = minimumPositionBeats(score);
     if (currentPosition < 0 && delta > 0) {
       set({ positionBeats: 0 });
@@ -231,7 +285,9 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       nextIndex < 0
         ? lower
         : score.measures[Math.min(score.measures.length - 1, nextIndex)]?.startBeat;
-    set({ positionBeats: clampPosition(score, nextPosition ?? currentPosition) });
+    set({
+      positionBeats: clampPosition(score, get().playbackEvents, nextPosition ?? currentPosition),
+    });
   },
 
   reset() {
@@ -251,7 +307,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
     const positionBeats =
       bounds && (currentPosition < bounds.startBeat || currentPosition > bounds.endBeat)
         ? bounds.startBeat
-        : clampPosition(score, currentPosition);
+        : clampPosition(score, playbackEvents, currentPosition);
 
     set({
       settings: nextSettings,

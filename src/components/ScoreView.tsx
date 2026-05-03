@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { OpenSheetMusicDisplay as OSMDInstance } from "opensheetmusicdisplay";
 import { sanitizeScoreDisplayXml } from "../lib/musicxml/displayXml";
+import { buildGlissandoSegments } from "../lib/musicxml/glissando";
 import { loadOsmd } from "../lib/osmd";
-import { usePracticeStore } from "../store/practiceStore";
+import { sourceBeatAt, usePracticeStore } from "../store/practiceStore";
 import type { ScoreModel } from "../lib/musicxml";
 
 type ScoreViewProps = {
@@ -18,6 +19,15 @@ type ScorePosition = {
   beat: number;
   x: number;
   notes: ColorableGraphicalNote[];
+};
+
+type ScoreGlissandoOverlay = {
+  id: string;
+  x1: number;
+  x2: number;
+  y1: number;
+  y2: number;
+  hand: string;
 };
 
 const OSMD_BEAT_FACTOR = 4;
@@ -223,10 +233,69 @@ function colorScoreNotes(notes: ColorableGraphicalNote[], color: string): void {
   }
 }
 
+function staffY(staff: number, midi: number): number {
+  const staffBase = staff === 2 ? 63 : 39;
+  const pitchOffset = Math.max(-10, Math.min(10, (midi - 60) * -0.8));
+
+  return staffBase + pitchOffset;
+}
+
+function buildScoreGlissandoOverlays(
+  score: ScoreModel,
+  positions: ScorePosition[],
+  view: HTMLDivElement,
+): ScoreGlissandoOverlay[] {
+  return buildGlissandoSegments(score.notes).flatMap((segment) => {
+    const startX =
+      xForBeat(positions, segment.startBeat)?.x ??
+      (segment.startBeat / score.totalBeats) * view.scrollWidth;
+    const endX =
+      xForBeat(positions, segment.endBeat)?.x ??
+      (segment.endBeat / score.totalBeats) * view.scrollWidth;
+
+    return [
+      {
+        id: segment.id,
+        x1: startX,
+        x2: endX,
+        y1: staffY(segment.startNote.staff, segment.startMidi),
+        y2: staffY(segment.endNote.staff, segment.endMidi),
+        hand: segment.hand,
+      },
+    ];
+  });
+}
+
+function renderGlissandoOverlays(
+  overlay: SVGSVGElement | null,
+  view: HTMLDivElement | null,
+  segments: ScoreGlissandoOverlay[],
+): void {
+  if (!overlay || !view) {
+    return;
+  }
+
+  overlay.setAttribute("width", `${view.scrollWidth}`);
+  overlay.setAttribute("height", `${view.clientHeight}`);
+  overlay.setAttribute("viewBox", `0 0 ${view.scrollWidth} ${view.clientHeight}`);
+  overlay.replaceChildren();
+
+  for (const segment of segments) {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("class", `score-glissando-line ${segment.hand}`);
+    line.setAttribute("x1", `${segment.x1}`);
+    line.setAttribute("x2", `${segment.x2}`);
+    line.setAttribute("y1", `${(segment.y1 / 100) * view.clientHeight}`);
+    line.setAttribute("y2", `${(segment.y2 / 100) * view.clientHeight}`);
+    overlay.append(line);
+  }
+}
+
 export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewProps) {
   const viewRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const measureRef = useRef<HTMLDivElement | null>(null);
+  const glissandoOverlayRef = useRef<SVGSVGElement | null>(null);
   const osmdRef = useRef<OSMDInstance | null>(null);
   const scorePositionsRef = useRef<ScorePosition[]>([]);
   const highlightedNotesRef = useRef<ColorableGraphicalNote[]>([]);
@@ -312,18 +381,31 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
             cursor.show();
           }
           osmdRef.current = osmd;
-          updateScorePosition(usePracticeStore.getState().positionBeats);
+          const currentState = usePracticeStore.getState();
+          updateScorePosition(
+            sourceBeatAt(currentState.playbackEvents, currentState.positionBeats),
+          );
           const view = viewRef.current;
           if (!view) {
             return;
           }
 
+          renderGlissandoOverlays(
+            glissandoOverlayRef.current,
+            view,
+            buildScoreGlissandoOverlays(score, [], view),
+          );
           cancelPositionBuild = startScorePositionBuild(osmd, view, (positions) => {
             if (cancelled || !viewRef.current) {
               return;
             }
 
             scorePositionsRef.current = positions;
+            renderGlissandoOverlays(
+              glissandoOverlayRef.current,
+              viewRef.current,
+              buildScoreGlissandoOverlays(score, positions, viewRef.current),
+            );
             updateScorePosition(usePracticeStore.getState().positionBeats);
           });
         }
@@ -350,10 +432,11 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       return undefined;
     }
 
-    updateScorePosition(usePracticeStore.getState().positionBeats);
-    return usePracticeStore.subscribe((state, previousState) => {
-      if (state.positionBeats !== previousState.positionBeats) {
-        updateScorePosition(state.positionBeats);
+    const currentState = usePracticeStore.getState();
+    updateScorePosition(sourceBeatAt(currentState.playbackEvents, currentState.positionBeats));
+    return usePracticeStore.subscribe((nextState, previousState) => {
+      if (nextState.positionBeats !== previousState.positionBeats) {
+        updateScorePosition(sourceBeatAt(nextState.playbackEvents, nextState.positionBeats));
       }
     });
   }, [active, score, updateScorePosition]);
@@ -370,10 +453,18 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     <div className="score-view">
       <div className="score-playback-line" aria-hidden="true" />
       <div className="score-current-measure" ref={measureRef}>
-        Measure {currentMeasure(score, usePracticeStore.getState().positionBeats)}
+        Measure{" "}
+        {currentMeasure(
+          score,
+          sourceBeatAt(
+            usePracticeStore.getState().playbackEvents,
+            usePracticeStore.getState().positionBeats,
+          ),
+        )}
       </div>
       {error ? <div className="score-error">{error}</div> : null}
       <div className="score-scroll" ref={viewRef}>
+        <svg className="score-glissando-overlay" ref={glissandoOverlayRef} aria-hidden="true" />
         <div className="score-canvas" ref={containerRef} />
       </div>
     </div>

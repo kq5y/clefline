@@ -28,6 +28,7 @@ import {
   handModeLabel,
   initialTempo,
   loopBounds,
+  sourceBeatAt,
   usePracticeStore,
 } from "../store/practiceStore";
 import type { PlaybackEvent } from "../lib/musicxml";
@@ -68,9 +69,11 @@ export function Controls() {
   const activeNotes = activeMidiAt(playbackEvents, positionBeats).length;
   const loop = loopBounds(score, settings);
   const currentMeasure =
-    positionBeats < 0
+    sourceBeatAt(playbackEvents, positionBeats) < 0
       ? "0"
-      : (score?.measures.findLast((measure) => measure.startBeat <= positionBeats)?.number ?? "1");
+      : (score?.measures.findLast(
+          (measure) => measure.startBeat <= sourceBeatAt(playbackEvents, positionBeats),
+        )?.number ?? "1");
   const onPlayClick = async () => {
     if (isPlaying) {
       togglePlaying();

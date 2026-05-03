@@ -1,3 +1,5 @@
+import { buildGlissandoSegments } from "./glissando";
+import { midiToPitchName } from "./pitch";
 import type { DirectionEvent, Hand, NoteEvent, PlaybackEvent, ScoreModel } from "./types";
 
 export type TimelineOptions = {
@@ -182,7 +184,7 @@ function arpeggioDirection(notes: NoteEvent[]): "up" | "down" {
     : "up";
 }
 
-export function buildPlaybackEvents(
+function buildSourcePlaybackEvents(
   score: ScoreModel,
   options: TimelineOptions = {},
 ): PlaybackEvent[] {
@@ -207,7 +209,7 @@ export function buildPlaybackEvents(
     grouped.set(key, [...(grouped.get(key) ?? []), note]);
   }
 
-  return Array.from(grouped.values())
+  const baseEvents = Array.from(grouped.values())
     .map((notes, index) => {
       const arpeggio = notes.some(isArpeggioNote);
       const orderedNotes = arpeggio
@@ -235,4 +237,161 @@ export function buildPlaybackEvents(
       };
     })
     .toSorted((a, b) => a.absoluteBeat - b.absoluteBeat || a.notes[0].midi - b.notes[0].midi);
+
+  return withGlissandoPlayback(score, options, baseEvents);
+}
+
+function syntheticGlissandoNote(source: NoteEvent, midi: number): NoteEvent {
+  return {
+    ...source,
+    id: `${source.id}-gliss-${midi}`,
+    midi,
+    pitchName: midiToPitchName(midi),
+    durationBeats: 0.08,
+    isChordTone: false,
+    notations: [{ type: "glissando", value: "playback" }],
+    tieStart: false,
+    tieStop: false,
+    tieGroupId: undefined,
+  };
+}
+
+function withGlissandoPlayback(
+  score: ScoreModel,
+  options: TimelineOptions,
+  events: PlaybackEvent[],
+): PlaybackEvent[] {
+  const glissandoEvents: PlaybackEvent[] = [];
+
+  for (const segment of buildGlissandoSegments(score.notes)) {
+    if (
+      !includeHand(segment.startNote, options.handMode) ||
+      !includeHand(segment.endNote, options.handMode)
+    ) {
+      continue;
+    }
+
+    const direction = Math.sign(segment.endMidi - segment.startMidi);
+    const semitoneDistance = Math.abs(segment.endMidi - segment.startMidi);
+    if (direction === 0 || semitoneDistance < 2) {
+      continue;
+    }
+
+    const beatSpan = Math.max(0.12, segment.endBeat - segment.startBeat);
+    const generatedCount = Math.min(semitoneDistance - 1, 36);
+    const midiStep = semitoneDistance > 36 ? semitoneDistance / (generatedCount + 1) : 1;
+    for (let index = 1; index <= generatedCount; index += 1) {
+      const midi =
+        segment.startMidi +
+        direction * Math.round(Math.min(semitoneDistance - 1, index * midiStep));
+      const progress = index / (generatedCount + 1);
+      const absoluteBeat = segment.startBeat + beatSpan * progress;
+      const note = syntheticGlissandoNote(segment.startNote, midi);
+      glissandoEvents.push({
+        id: `gliss-${segment.id}-${index}`,
+        absoluteBeat,
+        sourceStartBeat: absoluteBeat,
+        durationBeats: Math.min(0.1, beatSpan / (generatedCount + 1)),
+        noteEventIds: [note.id],
+        notes: [note],
+        measureNumber: segment.startNote.measureNumber,
+        staff: segment.startNote.staff,
+        hand: segment.hand as Hand,
+        velocity: performanceVelocity(score, [segment.startNote]) * 0.7,
+        rollOffsetBeats: 0,
+        notationLabels: ["glissando"],
+      });
+    }
+  }
+
+  return [...events, ...glissandoEvents].toSorted(
+    (a, b) => a.absoluteBeat - b.absoluteBeat || a.notes[0].midi - b.notes[0].midi,
+  );
+}
+
+function directionValue(direction: DirectionEvent): string {
+  return String(direction.text ?? direction.value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function hasDirection(direction: DirectionEvent, pattern: RegExp): boolean {
+  return (
+    direction.kind === "repeat-navigation" &&
+    (pattern.test(directionValue(direction)) || pattern.test(String(direction.text ?? "")))
+  );
+}
+
+function firstBeat(score: ScoreModel, predicate: (direction: DirectionEvent) => boolean) {
+  return score.directions.find(predicate)?.beat;
+}
+
+function copyEventsInSection(
+  events: PlaybackEvent[],
+  sourceStart: number,
+  sourceEnd: number,
+  performanceStart: number,
+  sectionIndex: number,
+): PlaybackEvent[] {
+  return events
+    .filter((event) => event.sourceStartBeat >= sourceStart && event.sourceStartBeat < sourceEnd)
+    .map((event) => ({
+      ...event,
+      id: `${event.id}-nav-${sectionIndex}`,
+      absoluteBeat: performanceStart + (event.absoluteBeat - sourceStart),
+    }));
+}
+
+function expandNavigation(score: ScoreModel, events: PlaybackEvent[]): PlaybackEvent[] {
+  const dsBeat = firstBeat(score, (direction) => hasDirection(direction, /dalsegno|d\.s\./i));
+  const dcBeat = firstBeat(score, (direction) => hasDirection(direction, /dacapo|d\.c\./i));
+  const jumpBeat = dsBeat ?? dcBeat;
+  if (jumpBeat === undefined) {
+    return events;
+  }
+
+  const jumpText = score.directions
+    .filter((direction) => direction.beat === jumpBeat && direction.kind === "repeat-navigation")
+    .map(directionValue)
+    .join(" ");
+  const targetBeat =
+    dsBeat !== undefined ? (firstBeat(score, (direction) => direction.kind === "segno") ?? 0) : 0;
+  const toCodaBeat = firstBeat(score, (direction) => hasDirection(direction, /tocoda|to\s+coda/i));
+  const codaBeat = firstBeat(score, (direction) => direction.kind === "coda");
+  const fineBeat = firstBeat(score, (direction) => hasDirection(direction, /^fine$|al\s+fine/i));
+
+  const useCoda = /coda/.test(jumpText) && toCodaBeat !== undefined && codaBeat !== undefined;
+  const repeatEnd = useCoda ? toCodaBeat : (fineBeat ?? score.totalBeats);
+
+  if (repeatEnd <= targetBeat || jumpBeat <= 0) {
+    return events;
+  }
+
+  const sections: Array<{ start: number; end: number }> = [
+    { start: 0, end: jumpBeat },
+    { start: targetBeat, end: repeatEnd },
+  ];
+  if (useCoda) {
+    sections.push({ start: codaBeat, end: score.totalBeats });
+  }
+
+  let performanceStart = 0;
+  const expanded: PlaybackEvent[] = [];
+  for (const [sectionIndex, section] of sections.entries()) {
+    expanded.push(
+      ...copyEventsInSection(events, section.start, section.end, performanceStart, sectionIndex),
+    );
+    performanceStart += section.end - section.start;
+  }
+
+  return expanded.toSorted(
+    (a, b) => a.absoluteBeat - b.absoluteBeat || a.notes[0].midi - b.notes[0].midi,
+  );
+}
+
+export function buildPlaybackEvents(
+  score: ScoreModel,
+  options: TimelineOptions = {},
+): PlaybackEvent[] {
+  return expandNavigation(score, buildSourcePlaybackEvents(score, options));
 }

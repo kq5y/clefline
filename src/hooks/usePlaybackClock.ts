@@ -1,5 +1,10 @@
 import { useEffect, useRef } from "react";
-import { initialTempo, loopBounds, usePracticeStore } from "../store/practiceStore";
+import {
+  initialTempo,
+  loopBounds,
+  playbackEndBeat,
+  usePracticeStore,
+} from "../store/practiceStore";
 
 const DISPLAY_FRAME_MS = 16;
 
@@ -43,8 +48,8 @@ export function usePlaybackClock(): void {
       if (bounds && nextPosition >= bounds.endBeat) {
         nextPosition = bounds.startBeat;
         shouldCommit = true;
-      } else if (nextPosition >= currentScore.totalBeats) {
-        nextPosition = currentScore.totalBeats;
+      } else if (nextPosition >= playbackEndBeat(currentScore, state.playbackEvents)) {
+        nextPosition = playbackEndBeat(currentScore, state.playbackEvents);
         shouldStop = true;
         shouldCommit = true;
       }

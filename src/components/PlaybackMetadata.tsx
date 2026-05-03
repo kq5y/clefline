@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import { initialTempo } from "../store/practiceStore";
+import { initialTempo, sourceBeatAt } from "../store/practiceStore";
 import type { DirectionEvent, PlaybackEvent, ScoreModel } from "../lib/musicxml";
 
 type PlaybackMetadataProps = {
@@ -87,6 +87,7 @@ export const PlaybackMetadata = memo(function PlaybackMetadata({
       return undefined;
     }
 
+    const sourcePositionBeats = sourceBeatAt(playbackEvents, positionBeats);
     const events = activeEvents(playbackEvents, positionBeats);
     const eventForDisplay = events.length > 0 ? events : latestEvent(playbackEvents, positionBeats);
     const displayEvents = Array.isArray(eventForDisplay)
@@ -109,14 +110,14 @@ export const PlaybackMetadata = memo(function PlaybackMetadata({
           )
         : undefined;
     const measure =
-      positionBeats < 0
+      sourcePositionBeats < 0
         ? undefined
-        : score.measures.findLast((item) => item.startBeat <= positionBeats);
+        : score.measures.findLast((item) => item.startBeat <= sourcePositionBeats);
 
     return {
-      measure: positionBeats < 0 ? "0" : (measure?.number ?? "1"),
-      dynamic: currentDynamic(score, positionBeats),
-      expression: currentExpression(score, positionBeats) ?? "-",
+      measure: sourcePositionBeats < 0 ? "0" : (measure?.number ?? "1"),
+      dynamic: currentDynamic(score, sourcePositionBeats),
+      expression: currentExpression(score, sourcePositionBeats) ?? "-",
       labels: labels.length > 0 ? labels.slice(0, 3).join(", ") : "-",
       tempo: Math.round(initialTempo(score)),
       velocity,

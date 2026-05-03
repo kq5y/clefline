@@ -468,6 +468,33 @@ input:focus-visible {
   box-sizing: content-box;
 }
 
+.score-glissando-overlay {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  min-width: 100%;
+  min-height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.score-glissando-line {
+  fill: none;
+  stroke: #e05842;
+  stroke-dasharray: 7 5;
+  stroke-linecap: round;
+  stroke-width: 3px;
+}
+
+.score-glissando-line.left {
+  stroke: #2695a9;
+}
+
+.score-glissando-line.unknown {
+  stroke: #a57126;
+}
+
 .score-playback-line {
   position: absolute;
   z-index: 3;

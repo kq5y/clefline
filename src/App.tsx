@@ -9,7 +9,13 @@ import { usePlaybackClock } from "./hooks/usePlaybackClock";
 import { useTonePlayback } from "./hooks/useTonePlayback";
 import { ensurePianoEngine } from "./lib/audio/pianoEngine";
 import { preloadOsmd } from "./lib/osmd";
-import { activeNotesAt, minimumPositionBeats, usePracticeStore } from "./store/practiceStore";
+import {
+  activeNotesAt,
+  minimumPositionBeats,
+  playbackEndBeat,
+  sourceBeatAt,
+  usePracticeStore,
+} from "./store/practiceStore";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   return (
@@ -51,9 +57,14 @@ function App() {
     () => activeNotesAt(playbackEvents, positionBeats),
     [playbackEvents, positionBeats],
   );
+  const displayPositionBeats = useMemo(
+    () => sourceBeatAt(playbackEvents, positionBeats),
+    [playbackEvents, positionBeats],
+  );
   const minimumPosition = minimumPositionBeats(score);
-  const progress = score?.totalBeats
-    ? ((positionBeats - minimumPosition) / (score.totalBeats - minimumPosition)) * 100
+  const playbackTotal = playbackEndBeat(score, playbackEvents);
+  const progress = playbackTotal
+    ? ((positionBeats - minimumPosition) / (playbackTotal - minimumPosition)) * 100
     : 0;
   const handleDragOver = (event: DragEvent) => {
     event.preventDefault();
@@ -157,7 +168,7 @@ function App() {
         <div className={scoreVisible ? "viewer-layer inactive" : "viewer-layer active"}>
           <NoteRiver
             score={score}
-            positionBeats={positionBeats}
+            positionBeats={displayPositionBeats}
             handMode={settings.handMode}
             riverZoom={settings.riverZoom}
             showMeasureLines={settings.showMeasureLines}

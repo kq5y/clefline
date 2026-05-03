@@ -1,6 +1,6 @@
 const MUSIC_SYMBOLS: Record<string, string> = {
-  coda: "𝄌",
-  segno: "𝄋",
+  coda: "Coda",
+  segno: "Segno",
 };
 
 function musicSymbol(name: string): string {
@@ -12,5 +12,7 @@ export function sanitizeScoreDisplayXml(xml: string): string {
     .replace(/&lt;sym&gt;\s*(coda|segno)\s*&lt;\/?sym&gt;/gi, (_, name: string) =>
       musicSymbol(name),
     )
-    .replace(/<sym>\s*(coda|segno)\s*<\/?sym>/gi, (_, name: string) => musicSymbol(name));
+    .replace(/<sym>\s*(coda|segno)\s*<\/?sym>/gi, (_, name: string) => musicSymbol(name))
+    .replace(/<coda\b[^>]*\/>/gi, "<words>Coda</words>")
+    .replace(/<segno\b[^>]*\/>/gi, "<words>Segno</words>");
 }
