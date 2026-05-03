@@ -135,6 +135,23 @@
   overflow: hidden;
 }
 
+.note-river canvas {
+  position: absolute;
+  left: 0;
+  will-change: transform;
+}
+
+.strike-line-canvas {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: rgb(255 255 255 / 62%);
+  pointer-events: none;
+}
+
 .river-motion-layer {
   will-change: transform;
 }
@@ -248,6 +265,7 @@
 
 .current-readout {
   position: absolute;
+  z-index: 2;
   top: 12px;
   right: 14px;
   left: 14px;

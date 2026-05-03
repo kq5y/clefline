@@ -18,6 +18,9 @@ type NoteRiverProps = {
 };
 
 const BASE_LOOK_AHEAD_BEATS = 4;
+const RENDER_BUFFER_BEATS = 2.5;
+const REANCHOR_AHEAD_BEATS = 1.45;
+const REANCHOR_BEHIND_BEATS = 0.55;
 const LOOK_BEHIND_BEATS = 0.5;
 const SPAWN_Y = 18;
 const STRIKE_Y = 100;
@@ -227,18 +230,39 @@ function noteLabelSignature(notes: NoteEvent[]): string {
 }
 
 function canvasSize(canvas: HTMLCanvasElement): { height: number; width: number } {
+  const parent = canvas.parentElement;
+
   return {
-    height: canvas.clientHeight,
-    width: canvas.clientWidth,
+    height: parent?.clientHeight ?? canvas.clientHeight,
+    width: parent?.clientWidth ?? canvas.clientWidth,
   };
 }
 
-function resizeCanvas(canvas: HTMLCanvasElement): boolean {
+function bufferPxFor(height: number, lookAheadBeats: number): number {
+  return Math.ceil(((RENDER_BUFFER_BEATS / lookAheadBeats) * STRIKE_Y * height) / VIEWBOX_HEIGHT);
+}
+
+function translatePxFor(
+  positionBeats: number,
+  anchorBeat: number,
+  lookAheadBeats: number,
+  height: number,
+): number {
+  return (((positionBeats - anchorBeat) / lookAheadBeats) * STRIKE_Y * height) / VIEWBOX_HEIGHT;
+}
+
+function resizeCanvas(canvas: HTMLCanvasElement, lookAheadBeats: number): boolean {
   const { height, width } = canvasSize(canvas);
+  const bufferPx = bufferPxFor(height, lookAheadBeats);
+  const layerHeight = height + bufferPx * 2;
   const pixelRatio = window.devicePixelRatio || 1;
   const nextWidth = Math.max(1, Math.round(width * pixelRatio));
-  const nextHeight = Math.max(1, Math.round(height * pixelRatio));
+  const nextHeight = Math.max(1, Math.round(layerHeight * pixelRatio));
   const changed = canvas.width !== nextWidth || canvas.height !== nextHeight;
+
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${layerHeight}px`;
+  canvas.style.top = `${-bufferPx}px`;
 
   if (changed) {
     canvas.width = nextWidth;
@@ -276,12 +300,12 @@ function drawMeasureLabel(
   context: CanvasRenderingContext2D,
   text: string,
   y: number,
-  canvasHeight: number,
+  layerHeight: number,
 ): void {
   const centerInset = MEASURE_LABEL_EDGE_PADDING_PX + MEASURE_LABEL_HEIGHT_PX / 2;
   const center = Math.min(
     Math.max(centerInset, y),
-    Math.max(centerInset, canvasHeight - centerInset),
+    Math.max(centerInset, layerHeight - centerInset),
   );
   const labelTop = Math.round(center - MEASURE_LABEL_HEIGHT_PX / 2);
   const labelWidth = Math.max(26, Math.ceil(context.measureText(text).width) + 14);
@@ -296,10 +320,10 @@ function drawMeasureLabel(
   context.fillText(text, 8 + labelWidth / 2, labelTop + MEASURE_LABEL_HEIGHT_PX / 2 + 0.5);
 }
 
-function drawRiver(
+function drawRiverLayer(
   canvas: HTMLCanvasElement,
   visualScore: VisualScore,
-  positionBeats: number,
+  anchorBeat: number,
   lookAheadBeats: number,
   handMode: HandMode,
   showMeasureLines: boolean,
@@ -314,12 +338,16 @@ function drawRiver(
     return;
   }
 
-  context.clearRect(0, 0, width, height);
+  resizeCanvas(canvas, lookAheadBeats);
+  const bufferPx = bufferPxFor(height, lookAheadBeats);
+  const layerHeight = height + bufferPx * 2;
+
+  context.clearRect(0, 0, width, layerHeight);
   context.lineCap = "round";
   context.lineJoin = "round";
 
-  const windowStart = positionBeats - LOOK_BEHIND_BEATS;
-  const windowEnd = positionBeats + lookAheadBeats;
+  const windowStart = anchorBeat - LOOK_BEHIND_BEATS - RENDER_BUFFER_BEATS;
+  const windowEnd = anchorBeat + lookAheadBeats + RENDER_BUFFER_BEATS;
 
   if (showMeasureLines) {
     const measureStartIndex = lowerBoundByStart(visualScore.measures, windowStart);
@@ -330,7 +358,8 @@ function drawRiver(
 
     for (let index = measureStartIndex; index < measureEndIndex; index += 1) {
       const measure = visualScore.measures[index];
-      const y = yUnitToPx(yForBeat(measure.startBeat, positionBeats, lookAheadBeats), height);
+      const y =
+        yUnitToPx(yForBeat(measure.startBeat, anchorBeat, lookAheadBeats), height) + bufferPx;
       context.globalAlpha = 1;
       context.beginPath();
       context.moveTo(0, y);
@@ -338,7 +367,7 @@ function drawRiver(
       context.strokeStyle = "rgb(255 255 255 / 22%)";
       context.lineWidth = 1;
       context.stroke();
-      drawMeasureLabel(context, measure.number, y, height);
+      drawMeasureLabel(context, measure.number, y, layerHeight);
     }
   }
 
@@ -353,11 +382,11 @@ function drawRiver(
     context.setLineDash([4, 3]);
     context.moveTo(
       percentToPx(segment.startX, width),
-      yUnitToPx(yForBeat(segment.startBeat, positionBeats, lookAheadBeats), height),
+      yUnitToPx(yForBeat(segment.startBeat, anchorBeat, lookAheadBeats), height) + bufferPx,
     );
     context.lineTo(
       percentToPx(segment.endX, width),
-      yUnitToPx(yForBeat(segment.endBeat, positionBeats, lookAheadBeats), height),
+      yUnitToPx(yForBeat(segment.endBeat, anchorBeat, lookAheadBeats), height) + bufferPx,
     );
     context.strokeStyle = GLISSANDO_COLORS[segment.hand as Hand] ?? GLISSANDO_COLORS.unknown;
     context.lineWidth = 2.6;
@@ -378,11 +407,13 @@ function drawRiver(
     }
 
     const { layout, note } = visualNote;
-    const startY = yUnitToPx(yForBeat(visualNote.startBeat, positionBeats, lookAheadBeats), height);
-    const endY = yUnitToPx(
-      yForBeat(visualNote.startBeat + visualNote.durationBeats, positionBeats, lookAheadBeats),
-      height,
-    );
+    const startY =
+      yUnitToPx(yForBeat(visualNote.startBeat, anchorBeat, lookAheadBeats), height) + bufferPx;
+    const endY =
+      yUnitToPx(
+        yForBeat(visualNote.startBeat + visualNote.durationBeats, anchorBeat, lookAheadBeats),
+        height,
+      ) + bufferPx;
     const top = Math.min(startY, endY);
     const bottom = Math.max(startY, endY);
     const noteHeight = Math.max((MIN_NOTE_HEIGHT_Y / VIEWBOX_HEIGHT) * height, bottom - top);
@@ -414,15 +445,6 @@ function drawRiver(
     context.lineWidth = 3.2;
     context.stroke();
   }
-
-  context.globalAlpha = 1;
-  const strikeY = yUnitToPx(STRIKE_Y, height);
-  context.beginPath();
-  context.moveTo(0, strikeY);
-  context.lineTo(width, strikeY);
-  context.strokeStyle = "rgb(255 255 255 / 62%)";
-  context.lineWidth = 2;
-  context.stroke();
 }
 
 export const NoteRiver = memo(function NoteRiver({
@@ -441,6 +463,7 @@ export const NoteRiver = memo(function NoteRiver({
   const showNoteNamesRef = useRef(showNoteNames);
   const lookAheadBeatsRef = useRef(lookAheadBeats);
   const latestPositionBeatRef = useRef(currentDisplayBeat());
+  const anchorBeatRef = useRef(latestPositionBeatRef.current);
   const labelSignatureRef = useRef("");
   const visualScore = useMemo<VisualScore>(() => {
     if (!score) {
@@ -496,21 +519,46 @@ export const NoteRiver = memo(function NoteRiver({
   showNoteNamesRef.current = showNoteNames;
   lookAheadBeatsRef.current = lookAheadBeats;
 
-  const paint = useCallback((positionBeats: number) => {
+  const redrawLayer = useCallback((anchorBeat: number) => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
     }
 
-    drawRiver(
+    drawRiverLayer(
       canvas,
       visualScoreRef.current,
-      positionBeats,
+      anchorBeat,
       lookAheadBeatsRef.current,
       handModeRef.current,
       showMeasureLinesRef.current,
     );
   }, []);
+
+  const updateMotion = useCallback((positionBeats: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const { height } = canvasSize(canvas);
+    const translateY = translatePxFor(
+      positionBeats,
+      anchorBeatRef.current,
+      lookAheadBeatsRef.current,
+      height,
+    );
+    canvas.style.transform = `translate3d(0, ${translateY.toFixed(2)}px, 0)`;
+  }, []);
+
+  const reanchor = useCallback(
+    (positionBeats: number) => {
+      anchorBeatRef.current = positionBeats;
+      redrawLayer(positionBeats);
+      updateMotion(positionBeats);
+    },
+    [redrawLayer, updateMotion],
+  );
 
   const updateActiveLabels = useCallback((positionBeats: number) => {
     if (!showNoteNamesRef.current) {
@@ -536,8 +584,9 @@ export const NoteRiver = memo(function NoteRiver({
     }
 
     const updateCanvasSize = () => {
-      resizeCanvas(canvas);
-      paint(latestPositionBeatRef.current);
+      resizeCanvas(canvas, lookAheadBeatsRef.current);
+      redrawLayer(anchorBeatRef.current);
+      updateMotion(latestPositionBeatRef.current);
     };
     updateCanvasSize();
 
@@ -549,26 +598,35 @@ export const NoteRiver = memo(function NoteRiver({
     observer.observe(canvas);
 
     return () => observer.disconnect();
-  }, [paint]);
+  }, [redrawLayer, updateMotion]);
 
   useEffect(() => {
     const nextBeat = currentDisplayBeat();
     latestPositionBeatRef.current = nextBeat;
+    anchorBeatRef.current = nextBeat;
     labelSignatureRef.current = "";
-    paint(nextBeat);
+    redrawLayer(nextBeat);
+    updateMotion(nextBeat);
     updateActiveLabels(nextBeat);
-  }, [paint, score, updateActiveLabels]);
+  }, [redrawLayer, score, updateActiveLabels, updateMotion]);
 
   useEffect(() => {
-    paint(latestPositionBeatRef.current);
+    reanchor(latestPositionBeatRef.current);
     updateActiveLabels(latestPositionBeatRef.current);
-  }, [handMode, lookAheadBeats, paint, showMeasureLines, updateActiveLabels, visualScore]);
+  }, [handMode, lookAheadBeats, reanchor, showMeasureLines, updateActiveLabels, visualScore]);
 
   useEffect(() => {
     const update = () => {
       const positionBeats = currentDisplayBeat();
       latestPositionBeatRef.current = positionBeats;
-      paint(positionBeats);
+      if (
+        positionBeats < anchorBeatRef.current - REANCHOR_BEHIND_BEATS ||
+        positionBeats > anchorBeatRef.current + REANCHOR_AHEAD_BEATS
+      ) {
+        reanchor(positionBeats);
+      } else {
+        updateMotion(positionBeats);
+      }
       updateActiveLabels(positionBeats);
     };
 
@@ -582,7 +640,7 @@ export const NoteRiver = memo(function NoteRiver({
         update();
       }
     });
-  }, [paint, updateActiveLabels]);
+  }, [reanchor, updateActiveLabels, updateMotion]);
 
   useEffect(() => {
     if (!showNoteNames) {
@@ -605,6 +663,7 @@ export const NoteRiver = memo(function NoteRiver({
   return (
     <div className="note-river" aria-label="Falling notes">
       <canvas aria-hidden="true" ref={canvasRef} />
+      <div className="strike-line-canvas" aria-hidden="true" />
       {showNoteNames ? (
         <div className="current-readout">
           {activeLabels.map((note) => (
