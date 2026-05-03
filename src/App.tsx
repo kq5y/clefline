@@ -2,11 +2,14 @@ import "./App.css";
 import { Controls } from "./components/Controls";
 import { NoteRiver } from "./components/NoteRiver";
 import { PianoKeyboard } from "./components/PianoKeyboard";
+import { ScoreView } from "./components/ScoreView";
 import { usePlaybackClock } from "./hooks/usePlaybackClock";
+import { useTonePlayback } from "./hooks/useTonePlayback";
 import { activeMidiAt, usePracticeStore } from "./store/practiceStore";
 
 function App() {
   usePlaybackClock();
+  useTonePlayback();
   const score = usePracticeStore((state) => state.score);
   const playbackEvents = usePracticeStore((state) => state.playbackEvents);
   const positionBeats = usePracticeStore((state) => state.positionBeats);
@@ -29,9 +32,7 @@ function App() {
             showNoteNames={settings.showNoteNames}
           />
         ) : (
-          <div className="score-placeholder">
-            <p>Score mode will render the loaded MusicXML here.</p>
-          </div>
+          <ScoreView score={score} positionBeats={positionBeats} />
         )}
       </section>
       <section className="keyboard-shell" aria-label="Piano keyboard">

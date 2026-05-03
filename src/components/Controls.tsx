@@ -4,6 +4,7 @@ import {
   activeMidiAt,
   handModeLabel,
   initialTempo,
+  loopBounds,
   usePracticeStore,
 } from "../store/practiceStore";
 
@@ -30,6 +31,9 @@ export function Controls() {
     event.target.value = "";
   };
   const activeNotes = activeMidiAt(playbackEvents, positionBeats).length;
+  const loop = loopBounds(score, settings);
+  const currentMeasure =
+    score?.measures.findLast((measure) => measure.startBeat <= positionBeats)?.number ?? "1";
 
   return (
     <>
@@ -56,8 +60,17 @@ export function Controls() {
           <>
             <span>{score.measures.length} measures</span>
             <span>{Math.round(initialTempo(score))} BPM</span>
+            <span>Measure {currentMeasure}</span>
             <span>{handModeLabel(settings.handMode)}</span>
             <span>{activeNotes} active notes</span>
+            {loop ? (
+              <span>
+                Loop {settings.loopStartMeasure}-{settings.loopEndMeasure}
+              </span>
+            ) : null}
+            {score.warnings.length > 0 ? (
+              <strong>{score.warnings.length} score warnings</strong>
+            ) : null}
           </>
         ) : null}
         {loadError ? <strong>{loadError}</strong> : null}
@@ -100,6 +113,55 @@ export function Controls() {
             onChange={(event) => updateSettings({ speed: Number(event.target.value) })}
           />
           <span>{Math.round(settings.speed * 100)}%</span>
+        </label>
+        <label className="slider-control">
+          Volume
+          <input
+            max="1"
+            min="0"
+            step="0.05"
+            type="range"
+            value={settings.volume}
+            onChange={(event) => updateSettings({ volume: Number(event.target.value) })}
+          />
+          <span>{Math.round(settings.volume * 100)}%</span>
+        </label>
+        <label className="toggle-control">
+          <input
+            type="checkbox"
+            checked={settings.loopEnabled}
+            disabled={!score}
+            onChange={(event) => updateSettings({ loopEnabled: event.target.checked })}
+          />
+          Loop
+        </label>
+        <label className="select-control">
+          A
+          <select
+            disabled={!score}
+            value={settings.loopStartMeasure ?? ""}
+            onChange={(event) => updateSettings({ loopStartMeasure: event.target.value })}
+          >
+            {score?.measures.map((measure) => (
+              <option key={measure.index} value={measure.number}>
+                {measure.number}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="select-control">
+          B
+          <select
+            disabled={!score}
+            value={settings.loopEndMeasure ?? ""}
+            onChange={(event) => updateSettings({ loopEndMeasure: event.target.value })}
+          >
+            {score?.measures.map((measure) => (
+              <option key={measure.index} value={measure.number}>
+                {measure.number}
+              </option>
+            ))}
+          </select>
         </label>
         <div className="segmented" aria-label="Hand mode">
           {(["both", "right", "left"] as const).map((handMode) => (

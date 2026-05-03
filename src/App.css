@@ -238,7 +238,8 @@ button:focus-visible,
 }
 
 .slider-control,
-.toggle-control {
+.toggle-control,
+.select-control {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -253,6 +254,49 @@ button:focus-visible,
 
 .toggle-control input {
   accent-color: var(--accent);
+}
+
+.select-control select {
+  max-width: 76px;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--text-strong);
+}
+
+.score-view {
+  position: relative;
+  height: 100%;
+  overflow: auto;
+  background: #f6f3ec;
+  color: #1b1d22;
+}
+
+.score-canvas {
+  min-height: 100%;
+  padding: 26px 20px 40px;
+}
+
+.score-current-measure,
+.score-error {
+  position: sticky;
+  z-index: 2;
+  top: 10px;
+  width: max-content;
+  margin: 10px auto 0;
+  border: 1px solid rgb(0 0 0 / 12%);
+  border-radius: 999px;
+  padding: 4px 11px;
+  background: rgb(255 255 255 / 90%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  color: #30343c;
+  font-size: 12px;
+}
+
+.score-error {
+  border-color: #c75f43;
+  color: #9f3d24;
 }
 
 .keyboard-shell {

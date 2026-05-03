@@ -105,10 +105,18 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
 
   loadXml(xml, sourceName) {
     const score = parseMusicXml(xml);
+    const firstMeasure = score.measures[0]?.number;
+    const fourthMeasure = score.measures[Math.min(3, score.measures.length - 1)]?.number;
+    const settings = {
+      ...get().settings,
+      loopStartMeasure: get().settings.loopStartMeasure ?? firstMeasure,
+      loopEndMeasure: get().settings.loopEndMeasure ?? fourthMeasure ?? firstMeasure,
+    };
     set({
       score,
       loadedName: sourceName,
-      playbackEvents: eventsFor(score, get().settings.handMode),
+      settings,
+      playbackEvents: eventsFor(score, settings.handMode),
       isLoading: false,
       loadError: undefined,
       isPlaying: false,
