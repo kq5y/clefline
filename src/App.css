@@ -122,6 +122,10 @@
   display: block;
 }
 
+.river-motion-layer {
+  will-change: transform;
+}
+
 .river-note {
   vector-effect: non-scaling-stroke;
   stroke: #060910;
@@ -170,6 +174,7 @@
   z-index: 2;
   inset: 0;
   pointer-events: none;
+  will-change: transform;
 }
 
 .measure-label {

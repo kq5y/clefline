@@ -1,7 +1,7 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { preloadOsmd } from "../lib/osmd";
 import { scheduleIdle } from "../lib/scheduleIdle";
-import { sourceBeatAt, usePracticeStore } from "../store/practiceStore";
+import { usePracticeStore } from "../store/practiceStore";
 import { NoteRiver } from "./NoteRiver";
 import { PlaybackMetadata } from "./PlaybackMetadata";
 import { ProgressTrack } from "./ProgressTrack";
@@ -9,18 +9,11 @@ import { ScoreView } from "./ScoreView";
 
 const RiverPlaybackLayer = memo(function RiverPlaybackLayer() {
   const score = usePracticeStore((state) => state.score);
-  const playbackEvents = usePracticeStore((state) => state.playbackEvents);
-  const positionBeats = usePracticeStore((state) => state.positionBeats);
   const settings = usePracticeStore((state) => state.settings);
-  const displayPositionBeats = useMemo(
-    () => sourceBeatAt(playbackEvents, positionBeats),
-    [playbackEvents, positionBeats],
-  );
 
   return (
     <NoteRiver
       score={score}
-      positionBeats={displayPositionBeats}
       handMode={settings.handMode}
       riverZoom={settings.riverZoom}
       showMeasureLines={settings.showMeasureLines}
