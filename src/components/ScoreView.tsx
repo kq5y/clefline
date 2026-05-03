@@ -88,6 +88,20 @@ function cursorXInScroll(view: HTMLDivElement): number | undefined {
   return cursorBox.left - viewBox.left + view.scrollLeft;
 }
 
+function xForGraphicalNotes(
+  notes: ColorableGraphicalNote[],
+  view: HTMLDivElement,
+): number | undefined {
+  const boxes = notes
+    .map((note) => noteHeadBoxInView(note, view))
+    .filter((box): box is NoteHeadBox => Boolean(box));
+  if (boxes.length === 0) {
+    return undefined;
+  }
+
+  return boxes.reduce((left, box) => Math.min(left, box.x), Number.POSITIVE_INFINITY);
+}
+
 function collectScorePosition(
   cursors: OSMDInstance["cursors"],
   primaryCursor: OSMDInstance["cursor"],
@@ -97,15 +111,15 @@ function collectScorePosition(
 ): void {
   const beat = primaryCursor.Iterator.CurrentSourceTimestamp.RealValue * OSMD_BEAT_FACTOR;
   const beatKey = beat.toFixed(5);
-  const x = cursorXInScroll(view);
+  const notes = Array.from(
+    new Set(cursors.flatMap((cursor) => cursor.GNotesUnderCursor() as ColorableGraphicalNote[])),
+  );
+  const x = xForGraphicalNotes(notes, view) ?? cursorXInScroll(view);
   if (x === undefined || seenBeats.has(beatKey)) {
     return;
   }
 
   seenBeats.add(beatKey);
-  const notes = Array.from(
-    new Set(cursors.flatMap((cursor) => cursor.GNotesUnderCursor() as ColorableGraphicalNote[])),
-  );
   positions.push({ beat, x, notes });
 }
 
@@ -138,7 +152,7 @@ function startScorePositionBuild(
   view.scrollLeft = 0;
   for (const cursor of cursors) {
     cursor.reset();
-    cursor.show();
+    cursor.hide();
   }
 
   const step = (deadline?: IdleDeadline) => {
@@ -470,7 +484,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
           osmd.enableOrDisableCursors(true);
           for (const cursor of osmd.cursors.length > 0 ? osmd.cursors : [osmd.cursor]) {
             cursor.reset();
-            cursor.show();
+            cursor.hide();
           }
           osmdRef.current = osmd;
           const currentState = usePracticeStore.getState();
