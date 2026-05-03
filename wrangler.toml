@@ -1,0 +1,4 @@
+name = "clefline"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-05-04"
+send_metrics = false

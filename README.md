@@ -16,9 +16,7 @@ pnpm build
 pnpm test:e2e
 ```
 
-`pnpm check` runs type checking, oxlint, and unit tests. The app is a static SPA,
-so Cloudflare Pages and Vercel can deploy it from `pnpm build` with `dist/` as
-the output directory.
+`pnpm check` runs type checking, oxlint, and unit tests.
 
 ## Samples
 
