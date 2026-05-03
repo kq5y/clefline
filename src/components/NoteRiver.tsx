@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import { pianoKeyLayoutForMidi } from "../lib/pianoLayout";
+import { pianoKeyLayoutForMidi, type PianoKeyLayout } from "../lib/pianoLayout";
 import { buildGlissandoSegments } from "../lib/musicxml/glissando";
 import { minimumPositionBeats, type HandMode } from "../store/practiceStore";
 import type { NoteEvent, ScoreModel } from "../lib/musicxml";
@@ -24,19 +24,34 @@ type MeasureMarker = {
 };
 
 type VisualNote = {
-  note: NoteEvent;
-  startBeat: number;
+  className: string;
   durationBeats: number;
   endBeat: number;
+  layout: PianoKeyLayout;
+  note: NoteEvent;
+  rx: string;
+  startBeat: number;
+  x: number;
+};
+
+type VisualGlissandoSegment = {
+  endBeat: number;
+  endX: number;
+  hand: string;
+  id: string;
+  startBeat: number;
+  startX: number;
 };
 
 type VisualScore = {
+  glissandoSegments: VisualGlissandoSegment[];
   maxDurationBeats: number;
   measures: MeasureMarker[];
   notes: VisualNote[];
 };
 
 const EMPTY_VISUAL_SCORE: VisualScore = {
+  glissandoSegments: [],
   maxDurationBeats: 0,
   measures: [],
   notes: [],
@@ -125,13 +140,18 @@ export const NoteRiver = memo(function NoteRiver({
       .map((note) => {
         const startBeat = visualStartBeat(note);
         const durationBeats = visualDurationBeats(note);
+        const layout = pianoKeyLayoutForMidi(note.midi);
         maxDurationBeats = Math.max(maxDurationBeats, durationBeats);
 
         return {
-          note,
-          startBeat,
+          className: `river-note ${note.hand} ${layout.black ? "black-note" : "white-note"}`,
           durationBeats,
           endBeat: startBeat + durationBeats,
+          layout,
+          note,
+          rx: layout.black ? "0.16" : "0.22",
+          startBeat,
+          x: layout.centerPercent - layout.noteWidthPercent / 2,
         };
       })
       .toSorted(
@@ -141,8 +161,21 @@ export const NoteRiver = memo(function NoteRiver({
       { index: -1, number: "0", startBeat: minimumPositionBeats(score) },
       ...score.measures,
     ].toSorted((first, second) => first.startBeat - second.startBeat);
+    const glissandoSegments = buildGlissandoSegments(score.notes).map((segment) => {
+      const startLayout = pianoKeyLayoutForMidi(segment.startMidi);
+      const endLayout = pianoKeyLayoutForMidi(segment.endMidi);
 
-    return { maxDurationBeats, measures, notes };
+      return {
+        endBeat: visualStartBeat(segment.endNote),
+        endX: endLayout.centerPercent,
+        hand: segment.hand,
+        id: segment.id,
+        startBeat: visualStartBeat(segment.startNote),
+        startX: startLayout.centerPercent,
+      };
+    });
+
+    return { glissandoSegments, maxDurationBeats, measures, notes };
   }, [score]);
   const notes = useMemo(() => {
     const windowStart = positionBeats - LOOK_BEHIND_BEATS;
@@ -167,15 +200,14 @@ export const NoteRiver = memo(function NoteRiver({
 
     return visualScore.measures.slice(startIndex, endIndex);
   }, [lookAheadBeats, positionBeats, visualScore]);
-  const allGlissandoSegments = useMemo(() => buildGlissandoSegments(score?.notes ?? []), [score]);
   const glissandoSegments = useMemo(
     () =>
-      allGlissandoSegments.filter(
+      visualScore.glissandoSegments.filter(
         (segment) =>
           segment.endBeat >= positionBeats - LOOK_BEHIND_BEATS &&
           segment.startBeat <= positionBeats + lookAheadBeats,
       ),
-    [allGlissandoSegments, lookAheadBeats, positionBeats],
+    [lookAheadBeats, positionBeats, visualScore],
   );
   const activeLabels = useMemo(() => {
     const startIndex = lowerBoundByStart(
@@ -220,14 +252,8 @@ export const NoteRiver = memo(function NoteRiver({
           : null}
         <line className="strike-line" x1="0" x2="100" y1={STRIKE_Y} y2={STRIKE_Y} />
         {glissandoSegments.map((segment) => {
-          const startLayout = pianoKeyLayoutForMidi(segment.startMidi);
-          const endLayout = pianoKeyLayoutForMidi(segment.endMidi);
-          const startY = yForBeat(
-            visualStartBeat(segment.startNote),
-            positionBeats,
-            lookAheadBeats,
-          );
-          const endY = yForBeat(visualStartBeat(segment.endNote), positionBeats, lookAheadBeats);
+          const startY = yForBeat(segment.startBeat, positionBeats, lookAheadBeats);
+          const endY = yForBeat(segment.endBeat, positionBeats, lookAheadBeats);
           const selected = includeVisual(handMode, segment.hand);
 
           return (
@@ -235,34 +261,32 @@ export const NoteRiver = memo(function NoteRiver({
               className={`glissando-line ${segment.hand}`}
               key={segment.id}
               opacity={selected ? 1 : 0.18}
-              x1={startLayout.centerPercent}
-              x2={endLayout.centerPercent}
+              x1={segment.startX}
+              x2={segment.endX}
               y1={Math.min(STRIKE_Y, Math.max(0, startY))}
               y2={Math.min(STRIKE_Y, Math.max(0, endY))}
             />
           );
         })}
-        {notes.map(({ note, startBeat, durationBeats }) => {
+        {notes.map(({ className, durationBeats, layout, note, rx, startBeat, x }) => {
           const startY = yForBeat(startBeat, positionBeats, lookAheadBeats);
           const endY = yForBeat(startBeat + durationBeats, positionBeats, lookAheadBeats);
           const top = clampVisibleY(Math.min(startY, endY));
           const bottom = Math.min(STRIKE_Y, Math.max(startY, endY));
           const height = Math.max(1.2, bottom - top);
           const attackY = Math.min(STRIKE_Y, Math.max(0, startY));
-          const layout = pianoKeyLayoutForMidi(note.midi);
-          const x = layout.centerPercent - layout.noteWidthPercent / 2;
           const selected = includeVisual(handMode, note.hand);
           return (
             <g className="river-note-group" key={note.id} opacity={selected ? 1 : 0.18}>
               <rect
-                className={`river-note ${note.hand} ${layout.black ? "black-note" : "white-note"}`}
+                className={className}
                 data-midi={note.midi}
                 data-pitch={note.pitchName}
                 x={x}
                 y={top}
                 width={layout.noteWidthPercent}
                 height={height}
-                rx={layout.black ? "0.16" : "0.22"}
+                rx={rx}
               />
               <line
                 className="note-release"

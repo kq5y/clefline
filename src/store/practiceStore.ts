@@ -59,6 +59,8 @@ const DEFAULT_SETTINGS: PracticeSettings = {
 };
 
 const ACTIVE_EVENT_LOOKBACK_BEATS = 16;
+const initialTempoCache = new WeakMap<ScoreModel, number>();
+const measureByNumberCache = new WeakMap<ScoreModel, Map<string, ScoreModel["measures"][number]>>();
 const playbackStatsCache = new WeakMap<
   PlaybackEvent[],
   { endBeat: number; maxDurationBeats: number }
@@ -73,9 +75,35 @@ function playableHand(handMode: HandMode): Hand | "both" {
 }
 
 export function initialTempo(score?: ScoreModel): number {
-  const tempo = score?.directions.find((direction) => direction.kind === "tempo")?.value;
+  if (!score) {
+    return 120;
+  }
 
-  return typeof tempo === "number" && Number.isFinite(tempo) && tempo > 0 ? tempo : 120;
+  const cached = initialTempoCache.get(score);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const tempo = score?.directions.find((direction) => direction.kind === "tempo")?.value;
+  const resolvedTempo =
+    typeof tempo === "number" && Number.isFinite(tempo) && tempo > 0 ? tempo : 120;
+  initialTempoCache.set(score, resolvedTempo);
+
+  return resolvedTempo;
+}
+
+function measureByNumber(score: ScoreModel, number: string | undefined) {
+  if (!number) {
+    return undefined;
+  }
+
+  let cache = measureByNumberCache.get(score);
+  if (!cache) {
+    cache = new Map(score.measures.map((measure) => [measure.number, measure]));
+    measureByNumberCache.set(score, cache);
+  }
+
+  return cache.get(number);
 }
 
 export function loopBounds(score: ScoreModel | undefined, settings: PracticeSettings) {
@@ -83,8 +111,8 @@ export function loopBounds(score: ScoreModel | undefined, settings: PracticeSett
     return undefined;
   }
 
-  const start = score.measures.find((measure) => measure.number === settings.loopStartMeasure);
-  const end = score.measures.find((measure) => measure.number === settings.loopEndMeasure);
+  const start = measureByNumber(score, settings.loopStartMeasure);
+  const end = measureByNumber(score, settings.loopEndMeasure);
   if (!start || !end || end.startBeat < start.startBeat) {
     return undefined;
   }

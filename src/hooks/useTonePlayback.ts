@@ -6,10 +6,12 @@ import {
   scheduleMidi,
 } from "../lib/audio/pianoEngine";
 import { initialTempo, loopBounds, usePracticeStore } from "../store/practiceStore";
+import type { ScoreModel } from "../lib/musicxml";
 
 const SCHEDULE_INTERVAL_MS = 25;
 const LOOK_AHEAD_SECONDS = 0.2;
 const HIDDEN_LOOK_AHEAD_SECONDS = 2.2;
+const measureStartCache = new WeakMap<ScoreModel, Set<string>>();
 
 function firstEventIndexAtOrAfter(events: { absoluteBeat: number }[], beat: number): number {
   let low = 0;
@@ -29,9 +31,17 @@ function firstEventIndexAtOrAfter(events: { absoluteBeat: number }[], beat: numb
 
 function isMeasureStartBeat(beat: number): boolean {
   const { score } = usePracticeStore.getState();
-  const measure = score?.measures.findLast((item) => item.startBeat <= beat);
+  if (!score) {
+    return Math.abs(beat) < 0.001;
+  }
 
-  return measure ? Math.abs(beat - measure.startBeat) < 0.001 : Math.abs(beat) < 0.001;
+  let starts = measureStartCache.get(score);
+  if (!starts) {
+    starts = new Set(score.measures.map((measure) => measure.startBeat.toFixed(3)));
+    measureStartCache.set(score, starts);
+  }
+
+  return starts.has(beat.toFixed(3));
 }
 
 export function useTonePlayback(): void {
@@ -58,6 +68,7 @@ export function useTonePlayback(): void {
 
     wasPlayingRef.current = true;
     let cancelled = false;
+    const backendPromise = ensurePianoEngine();
     const schedule = async () => {
       if (schedulingRef.current) {
         return;
@@ -90,7 +101,7 @@ export function useTonePlayback(): void {
         }
         previousPositionRef.current = state.positionBeats;
 
-        const backend = await ensurePianoEngine();
+        const backend = await backendPromise;
         if (cancelled) return;
 
         const beatRate = (initialTempo(score) / 60) * state.settings.speed;

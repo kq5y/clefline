@@ -88,7 +88,7 @@ function visibleCursorElement(view: HTMLDivElement): HTMLElement | undefined {
   return cursor;
 }
 
-function cursorXInScroll(view: HTMLDivElement): number | undefined {
+function cursorXInView(view: HTMLDivElement, contentOffset: number): number | undefined {
   const cursor = visibleCursorElement(view);
   if (!cursor) {
     return undefined;
@@ -97,15 +97,16 @@ function cursorXInScroll(view: HTMLDivElement): number | undefined {
   const cursorBox = cursor.getBoundingClientRect();
   const viewBox = view.getBoundingClientRect();
 
-  return cursorBox.left - viewBox.left + view.scrollLeft;
+  return cursorBox.left - viewBox.left + contentOffset;
 }
 
 function xForGraphicalNotes(
   notes: ColorableGraphicalNote[],
   view: HTMLDivElement,
+  contentOffset: number,
 ): number | undefined {
   const boxes = notes
-    .map((note) => noteHeadBoxInView(note, view))
+    .map((note) => noteHeadBoxInView(note, view, contentOffset))
     .filter((box): box is NoteHeadBox => Boolean(box));
   if (boxes.length === 0) {
     return undefined;
@@ -118,6 +119,7 @@ function collectScorePosition(
   cursors: OSMDInstance["cursors"],
   primaryCursor: OSMDInstance["cursor"],
   view: HTMLDivElement,
+  contentOffset: number,
   positions: ScorePosition[],
   seenBeats: Set<string>,
 ): void {
@@ -126,7 +128,7 @@ function collectScorePosition(
   const notes = Array.from(
     new Set(cursors.flatMap((cursor) => cursor.GNotesUnderCursor() as ColorableGraphicalNote[])),
   );
-  const x = xForGraphicalNotes(notes, view) ?? cursorXInScroll(view);
+  const x = xForGraphicalNotes(notes, view, contentOffset) ?? cursorXInView(view, contentOffset);
   if (x === undefined || seenBeats.has(beatKey)) {
     return;
   }
@@ -151,6 +153,7 @@ function schedulePositionBuild(callback: (deadline?: IdleDeadline) => void): () 
 function startScorePositionBuild(
   osmd: OSMDInstance,
   view: HTMLDivElement,
+  resetContentOffset: () => void,
   onComplete: (positions: ScorePosition[]) => void,
 ): () => void {
   const cursors = osmd.cursors.length > 0 ? osmd.cursors : [osmd.cursor];
@@ -161,6 +164,7 @@ function startScorePositionBuild(
   let steps = 0;
   let cancelSchedule: (() => void) | undefined;
 
+  resetContentOffset();
   view.scrollLeft = 0;
   for (const cursor of cursors) {
     cursor.reset();
@@ -172,6 +176,7 @@ function startScorePositionBuild(
       return;
     }
 
+    resetContentOffset();
     let processed = 0;
     while (steps < MAX_CURSOR_STEPS && !primaryCursor.Iterator.EndReached) {
       if (deadline && processed > 0 && deadline.timeRemaining() < 4) {
@@ -181,7 +186,7 @@ function startScorePositionBuild(
         break;
       }
 
-      collectScorePosition(cursors, primaryCursor, view, positions, seenBeats);
+      collectScorePosition(cursors, primaryCursor, view, 0, positions, seenBeats);
       for (const cursor of cursors) {
         cursor.next();
       }
@@ -291,6 +296,7 @@ function noteHeadElement(note: ColorableGraphicalNote): HTMLElement | undefined 
 function noteHeadBoxInView(
   note: ColorableGraphicalNote,
   view: HTMLDivElement,
+  contentOffset: number,
 ): NoteHeadBox | undefined {
   const element = noteHeadElement(note);
   if (!element) {
@@ -301,7 +307,7 @@ function noteHeadBoxInView(
   const viewBox = view.getBoundingClientRect();
 
   return {
-    x: box.left - viewBox.left + view.scrollLeft,
+    x: box.left - viewBox.left + contentOffset,
     y: box.top - viewBox.top + view.scrollTop,
     width: box.width,
     height: box.height,
@@ -343,6 +349,7 @@ function buildScoreGlissandoOverlays(
   score: ScoreModel,
   positions: ScorePosition[],
   view: HTMLDivElement,
+  contentOffset: number,
 ): ScoreGlissandoOverlay[] {
   if (positions.length === 0) {
     return [];
@@ -355,8 +362,8 @@ function buildScoreGlissandoOverlays(
       return [];
     }
 
-    const startBox = noteHeadBoxInView(startNote, view);
-    const endBox = noteHeadBoxInView(endNote, view);
+    const startBox = noteHeadBoxInView(startNote, view, contentOffset);
+    const endBox = noteHeadBoxInView(endNote, view, contentOffset);
     if (!startBox || !endBox) {
       return [];
     }
@@ -380,16 +387,16 @@ function buildScoreGlissandoOverlays(
 
 function renderGlissandoOverlays(
   overlay: SVGSVGElement | null,
-  view: HTMLDivElement | null,
+  host: HTMLElement | null,
   segments: ScoreGlissandoOverlay[],
 ): void {
-  if (!overlay || !view) {
+  if (!overlay || !host) {
     return;
   }
 
-  overlay.setAttribute("width", `${view.scrollWidth}`);
-  overlay.setAttribute("height", `${view.scrollHeight}`);
-  overlay.setAttribute("viewBox", `0 0 ${view.scrollWidth} ${view.scrollHeight}`);
+  overlay.setAttribute("width", `${host.scrollWidth}`);
+  overlay.setAttribute("height", `${host.scrollHeight}`);
+  overlay.setAttribute("viewBox", `0 0 ${host.scrollWidth} ${host.scrollHeight}`);
   overlay.replaceChildren();
 
   for (const segment of segments) {
@@ -405,6 +412,7 @@ function renderGlissandoOverlays(
 
 export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewProps) {
   const viewRef = useRef<HTMLDivElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const measureRef = useRef<HTMLDivElement | null>(null);
   const glissandoOverlayRef = useRef<SVGSVGElement | null>(null);
@@ -415,12 +423,20 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   const latestMeasureRef = useRef<string | undefined>(undefined);
   const pendingPositionRef = useRef<number | undefined>(undefined);
   const animationFrameRef = useRef<number | undefined>(undefined);
+  const scoreOffsetRef = useRef(0);
   const [error, setError] = useState<string | undefined>();
+  const setScoreOffset = useCallback((offset: number) => {
+    scoreOffsetRef.current = offset;
+    if (trackRef.current) {
+      trackRef.current.style.transform = `translate3d(${-offset}px, 0, 0)`;
+    }
+  }, []);
 
   const updateScorePosition = useCallback(
     (positionBeats: number) => {
       const view = viewRef.current;
-      if (!view || !score || score.totalBeats <= 0) {
+      const track = trackRef.current;
+      if (!view || !track || !score || score.totalBeats <= 0) {
         return;
       }
 
@@ -434,14 +450,14 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
 
       const scorePositions = scorePositionsRef.current;
       const currentPosition = xForBeat(scorePositions, positionBeats);
-      const fallbackX = (positionBeats / score.totalBeats) * view.scrollWidth;
-      const maxScroll = Math.max(0, view.scrollWidth - view.clientWidth);
+      const fallbackX = (positionBeats / score.totalBeats) * track.scrollWidth;
+      const maxScroll = Math.max(0, track.scrollWidth - view.clientWidth);
       const targetScroll = Math.min(
         maxScroll,
         Math.max(0, (currentPosition?.x ?? fallbackX) - view.clientWidth * 0.42),
       );
-      if (Math.abs(view.scrollLeft - targetScroll) > 0.25) {
-        view.scrollLeft = targetScroll;
+      if (Math.abs(scoreOffsetRef.current - targetScroll) > 0.25) {
+        setScoreOffset(targetScroll);
       }
 
       const nextHighlightIndex = positionBeats < 0 ? -1 : (currentPosition?.index ?? -1);
@@ -456,7 +472,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
         }
       }
     },
-    [score],
+    [score, setScoreOffset],
   );
   const scheduleScorePosition = useCallback(
     (positionBeats: number) => {
@@ -491,6 +507,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     osmdRef.current = null;
     scorePositionsRef.current = [];
     latestMeasureRef.current = undefined;
+    setScoreOffset(0);
     setError(undefined);
 
     void loadOsmd()
@@ -534,22 +551,32 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
             return;
           }
 
-          cancelPositionBuild = startScorePositionBuild(osmd, view, (positions) => {
-            if (cancelled || !viewRef.current) {
-              return;
-            }
+          cancelPositionBuild = startScorePositionBuild(
+            osmd,
+            view,
+            () => setScoreOffset(0),
+            (positions) => {
+              if (cancelled || !viewRef.current) {
+                return;
+              }
 
-            scorePositionsRef.current = positions;
-            renderGlissandoOverlays(
-              glissandoOverlayRef.current,
-              viewRef.current,
-              buildScoreGlissandoOverlays(score, positions, viewRef.current),
-            );
-            const latestState = usePracticeStore.getState();
-            updateScorePosition(
-              sourceBeatAt(latestState.playbackEvents, latestState.positionBeats),
-            );
-          });
+              scorePositionsRef.current = positions;
+              renderGlissandoOverlays(
+                glissandoOverlayRef.current,
+                trackRef.current,
+                buildScoreGlissandoOverlays(
+                  score,
+                  positions,
+                  viewRef.current,
+                  scoreOffsetRef.current,
+                ),
+              );
+              const latestState = usePracticeStore.getState();
+              updateScorePosition(
+                sourceBeatAt(latestState.playbackEvents, latestState.positionBeats),
+              );
+            },
+          );
         }
       })
       .catch((reason: unknown) => {
@@ -568,13 +595,14 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       highlightedNotesRef.current = [];
       highlightedIndexRef.current = -1;
       latestMeasureRef.current = undefined;
+      setScoreOffset(0);
       scorePositionsRef.current = [];
       glissandoOverlay?.replaceChildren();
       osmdRef.current?.clear();
       osmdRef.current = null;
       container.innerHTML = "";
     };
-  }, [score, updateScorePosition]);
+  }, [score, setScoreOffset, updateScorePosition]);
 
   useEffect(() => {
     if (!score || !active) {
@@ -622,8 +650,10 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       </div>
       {error ? <div className="score-error">{error}</div> : null}
       <div className="score-scroll" ref={viewRef}>
-        <svg className="score-glissando-overlay" ref={glissandoOverlayRef} aria-hidden="true" />
-        <div className="score-canvas" ref={containerRef} />
+        <div className="score-track" ref={trackRef}>
+          <svg className="score-glissando-overlay" ref={glissandoOverlayRef} aria-hidden="true" />
+          <div className="score-canvas" ref={containerRef} />
+        </div>
       </div>
     </div>
   );

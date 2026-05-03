@@ -7,6 +7,7 @@ import {
 } from "../store/practiceStore";
 
 const DISPLAY_FRAME_MS = 16;
+const HIDDEN_COMMIT_MS = 250;
 
 export function usePlaybackClock(): void {
   const lastFrame = useRef<number | undefined>(undefined);
@@ -68,12 +69,24 @@ export function usePlaybackClock(): void {
       }
     };
 
-    tick();
-    const intervalId = window.setInterval(tick, DISPLAY_FRAME_MS);
+    let frameId: number | undefined;
+    const frame = () => {
+      tick();
+      frameId = window.requestAnimationFrame(frame);
+    };
+    frameId = window.requestAnimationFrame(frame);
+    const hiddenIntervalId = window.setInterval(() => {
+      if (document.hidden) {
+        tick();
+      }
+    }, HIDDEN_COMMIT_MS);
     window.addEventListener("visibilitychange", tick);
 
     return () => {
-      window.clearInterval(intervalId);
+      if (frameId !== undefined) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.clearInterval(hiddenIntervalId);
       window.removeEventListener("visibilitychange", tick);
     };
   }, [isPlaying, score, setPlaying, setPosition]);

@@ -1,21 +1,12 @@
 import "./App.css";
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useEffect, useState, type DragEvent } from "react";
 import { Controls } from "./components/Controls";
-import { NoteRiver } from "./components/NoteRiver";
-import { PianoKeyboard } from "./components/PianoKeyboard";
-import { PlaybackMetadata } from "./components/PlaybackMetadata";
-import { ScoreView } from "./components/ScoreView";
+import { KeyboardShell } from "./components/KeyboardShell";
+import { PlaybackSurface } from "./components/PlaybackSurface";
 import { usePlaybackClock } from "./hooks/usePlaybackClock";
 import { useTonePlayback } from "./hooks/useTonePlayback";
 import { ensurePianoEngine } from "./lib/audio/pianoEngine";
-import { preloadOsmd } from "./lib/osmd";
-import {
-  activeNotesAt,
-  minimumPositionBeats,
-  playbackEndBeat,
-  sourceBeatAt,
-  usePracticeStore,
-} from "./store/practiceStore";
+import { usePracticeStore } from "./store/practiceStore";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   return (
@@ -31,41 +22,11 @@ function isButtonTarget(target: EventTarget | null): boolean {
   );
 }
 
-function scheduleIdle(callback: () => void): () => void {
-  if (window.requestIdleCallback && window.cancelIdleCallback) {
-    const id = window.requestIdleCallback(callback, { timeout: 1_200 });
-
-    return () => window.cancelIdleCallback(id);
-  }
-
-  const id = window.setTimeout(callback, 300);
-
-  return () => window.clearTimeout(id);
-}
-
 function App() {
   const [dragActive, setDragActive] = useState(false);
-  const [scorePrepared, setScorePrepared] = useState(false);
   usePlaybackClock();
   useTonePlayback();
-  const score = usePracticeStore((state) => state.score);
-  const playbackEvents = usePracticeStore((state) => state.playbackEvents);
-  const positionBeats = usePracticeStore((state) => state.positionBeats);
-  const settings = usePracticeStore((state) => state.settings);
   const loadFile = usePracticeStore((state) => state.loadFile);
-  const activeNotes = useMemo(
-    () => activeNotesAt(playbackEvents, positionBeats),
-    [playbackEvents, positionBeats],
-  );
-  const displayPositionBeats = useMemo(
-    () => sourceBeatAt(playbackEvents, positionBeats),
-    [playbackEvents, positionBeats],
-  );
-  const minimumPosition = minimumPositionBeats(score);
-  const playbackTotal = playbackEndBeat(score, playbackEvents);
-  const progress = playbackTotal
-    ? ((positionBeats - minimumPosition) / (playbackTotal - minimumPosition)) * 100
-    : 0;
   const handleDragOver = (event: DragEvent) => {
     event.preventDefault();
     setDragActive(true);
@@ -119,36 +80,6 @@ function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  useEffect(() => {
-    return scheduleIdle(preloadOsmd);
-  }, []);
-
-  useEffect(() => {
-    if (!score) {
-      setScorePrepared(false);
-      return undefined;
-    }
-
-    setScorePrepared(false);
-    const cancel = scheduleIdle(() => {
-      const state = usePracticeStore.getState();
-      if (state.score === score && !state.isPlaying) {
-        setScorePrepared(true);
-      }
-    });
-
-    return cancel;
-  }, [score]);
-
-  useEffect(() => {
-    if (settings.viewMode === "score") {
-      setScorePrepared(true);
-    }
-  }, [settings.viewMode]);
-
-  const scoreVisible = settings.viewMode === "score";
-  const shouldMountScore = scoreVisible || scorePrepared;
-
   return (
     <main
       className={dragActive ? "app-shell drag-active" : "app-shell"}
@@ -157,38 +88,8 @@ function App() {
       onDrop={handleDrop}
     >
       <Controls />
-      <section className="viewer-panel" aria-label="Music viewer">
-        <div className="progress-track">
-          <div style={{ width: `${progress}%` }} />
-        </div>
-        <PlaybackMetadata
-          score={score}
-          playbackEvents={playbackEvents}
-          positionBeats={positionBeats}
-        />
-        <div className={scoreVisible ? "viewer-layer inactive" : "viewer-layer active"}>
-          <NoteRiver
-            score={score}
-            positionBeats={displayPositionBeats}
-            handMode={settings.handMode}
-            riverZoom={settings.riverZoom}
-            showMeasureLines={settings.showMeasureLines}
-            showNoteNames={settings.showNoteNames}
-          />
-        </div>
-        {shouldMountScore ? (
-          <div className={scoreVisible ? "viewer-layer active" : "viewer-layer inactive"}>
-            <ScoreView active={scoreVisible} score={score} />
-          </div>
-        ) : null}
-      </section>
-      <section className="keyboard-shell" aria-label="Piano keyboard">
-        <PianoKeyboard
-          activeNotes={activeNotes}
-          showNoteNames={settings.showNoteNames}
-          volume={settings.volume}
-        />
-      </section>
+      <PlaybackSurface />
+      <KeyboardShell />
       {dragActive ? <div className="drop-overlay">Drop MusicXML here</div> : null}
     </main>
   );
