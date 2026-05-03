@@ -328,19 +328,19 @@ export const Controls = memo(function Controls() {
             <label className="toggle-control">
               <input
                 type="checkbox"
+                checked={settings.metronomeEnabled}
+                onChange={(event) => updateSettings({ metronomeEnabled: event.target.checked })}
+              />
+              Metronome
+            </label>
+            <label className="toggle-control">
+              <input
+                type="checkbox"
                 checked={settings.loopEnabled}
                 disabled={!score}
                 onChange={(event) => updateSettings({ loopEnabled: event.target.checked })}
               />
               Loop
-            </label>
-            <label className="toggle-control">
-              <input
-                type="checkbox"
-                checked={settings.metronomeEnabled}
-                onChange={(event) => updateSettings({ metronomeEnabled: event.target.checked })}
-              />
-              Metronome
             </label>
             <div className="range-row">
               <label className="select-control">
