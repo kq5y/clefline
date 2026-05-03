@@ -133,7 +133,12 @@ export async function scheduleMetronomeClick(
 ): Promise<void> {
   const backend = await ensurePianoEngine();
   backend.metronome.volume.value = volumeToDb(Math.max(0.01, volume));
-  backend.metronome.triggerAttackRelease(accented ? "C6" : "C5", 0.045, startTime, volume);
+  backend.metronome.triggerAttackRelease(
+    accented ? "C7" : "C5",
+    accented ? 0.055 : 0.038,
+    startTime,
+    clampVolume(accented ? 0.92 : 0.58),
+  );
 }
 
 export async function releaseAllPianoKeys(): Promise<void> {

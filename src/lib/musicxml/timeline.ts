@@ -12,6 +12,13 @@ export type PlaybackSection = {
   sourceStartBeat: number;
 };
 
+export type MetronomeClick = {
+  absoluteBeat: number;
+  sourceBeat: number;
+  accented: boolean;
+  measureNumber: string;
+};
+
 function includeHand(note: NoteEvent, handMode: TimelineOptions["handMode"]): boolean {
   if (!handMode || handMode === "both") {
     return true;
@@ -380,6 +387,12 @@ function measureEndBeat(measure: ScoreModel["measures"][number]): number {
   return measure.startBeat + measure.durationBeats;
 }
 
+function metronomeUnitBeats(measure: ScoreModel["measures"][number]): number {
+  const beatType = measure.timeSignature.beatType;
+
+  return beatType > 0 ? 4 / beatType : 1;
+}
+
 function appendSourceSection(
   sections: Array<{ start: number; end: number }>,
   start: number,
@@ -521,6 +534,39 @@ export function buildPlaybackSections(score: ScoreModel): PlaybackSection[] {
 
     return playbackSection;
   });
+}
+
+export function buildMetronomeClicks(score: ScoreModel): MetronomeClick[] {
+  const clicks: MetronomeClick[] = [];
+  for (const section of buildPlaybackSections(score)) {
+    for (const measure of score.measures) {
+      const sourceStart = Math.max(measure.startBeat, section.sourceStartBeat);
+      const sourceEnd = Math.min(measureEndBeat(measure), section.sourceEndBeat);
+      if (sourceEnd <= sourceStart) {
+        continue;
+      }
+
+      const unitBeats = metronomeUnitBeats(measure);
+      const firstIndex = Math.ceil((sourceStart - measure.startBeat - 0.0001) / unitBeats);
+      for (
+        let sourceBeat = measure.startBeat + Math.max(0, firstIndex) * unitBeats;
+        sourceBeat < sourceEnd - 0.0001;
+        sourceBeat += unitBeats
+      ) {
+        clicks.push({
+          absoluteBeat: section.performanceStartBeat + (sourceBeat - section.sourceStartBeat),
+          sourceBeat,
+          accented: Math.abs(sourceBeat - measure.startBeat) < 0.001,
+          measureNumber: measure.number,
+        });
+      }
+    }
+  }
+
+  return clicks.toSorted(
+    (first, second) =>
+      first.absoluteBeat - second.absoluteBeat || first.sourceBeat - second.sourceBeat,
+  );
 }
 
 function expandNavigation(score: ScoreModel, events: PlaybackEvent[]): PlaybackEvent[] {

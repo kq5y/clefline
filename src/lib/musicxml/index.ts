@@ -1,8 +1,8 @@
 export { readMusicXmlFile, fetchMusicXml } from "./load";
 export { parseMusicXml } from "./parse";
 export { PIANO_MAX_MIDI, PIANO_MIN_MIDI, isBlackKey, midiToPitchName } from "./pitch";
-export { buildPlaybackEvents, buildPlaybackSections } from "./timeline";
-export type { PlaybackSection } from "./timeline";
+export { buildMetronomeClicks, buildPlaybackEvents, buildPlaybackSections } from "./timeline";
+export type { MetronomeClick, PlaybackSection } from "./timeline";
 export type {
   DirectionEvent,
   Hand,

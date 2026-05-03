@@ -411,6 +411,7 @@ export function parseMusicXml(xml: string): ScoreModel {
   const warnings: ScoreWarning[] = [];
   let divisions = 1;
   let currentBeat = 0;
+  let currentTimeSignature = { beats: 4, beatType: 4 };
 
   const partCount = elements(root, "part").length;
   if (partCount > 1) {
@@ -427,6 +428,7 @@ export function parseMusicXml(xml: string): ScoreModel {
       number: measureNumber,
       startBeat: currentBeat,
       durationBeats: 0,
+      timeSignature: currentTimeSignature,
       repeatStart: false,
       repeatEnd: false,
       endings: [],
@@ -438,6 +440,14 @@ export function parseMusicXml(xml: string): ScoreModel {
     for (const child of elements(measureElement)) {
       if (child.tagName === "attributes") {
         divisions = numberText(child, "divisions", divisions);
+        const timeSignature = first(child, "time");
+        if (timeSignature) {
+          currentTimeSignature = {
+            beats: numberText(timeSignature, "beats", currentTimeSignature.beats),
+            beatType: numberText(timeSignature, "beat-type", currentTimeSignature.beatType),
+          };
+          measure.timeSignature = currentTimeSignature;
+        }
         continue;
       }
 

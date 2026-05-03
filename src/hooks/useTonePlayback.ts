@@ -5,6 +5,7 @@ import {
   scheduleMetronomeClick,
   scheduleMidi,
 } from "../lib/audio/pianoEngine";
+import { buildMetronomeClicks } from "../lib/musicxml";
 import {
   loopBounds,
   playbackEndBeat,
@@ -19,7 +20,7 @@ import type { PlaybackEvent, ScoreModel } from "../lib/musicxml";
 const SCHEDULE_INTERVAL_MS = 25;
 const LOOK_AHEAD_SECONDS = 0.2;
 const HIDDEN_LOOK_AHEAD_SECONDS = 2.2;
-const measureStartCache = new WeakMap<ScoreModel, Set<string>>();
+const metronomeClickCache = new WeakMap<ScoreModel, ReturnType<typeof buildMetronomeClicks>>();
 
 function firstEventIndexAtOrAfter(events: { absoluteBeat: number }[], beat: number): number {
   let low = 0;
@@ -37,23 +38,18 @@ function firstEventIndexAtOrAfter(events: { absoluteBeat: number }[], beat: numb
   return low;
 }
 
-function isMeasureStartBeat(beat: number): boolean {
-  const { score } = usePracticeStore.getState();
-  if (!score) {
-    return Math.abs(beat) < 0.001;
-  }
-
-  let starts = measureStartCache.get(score);
-  if (!starts) {
-    starts = new Set(score.measures.map((measure) => measure.startBeat.toFixed(3)));
-    measureStartCache.set(score, starts);
-  }
-
-  return starts.has(beat.toFixed(3));
-}
-
 function beatRateForTempo(tempo: number, speed: number): number {
   return Math.max(0.05, (tempo / 60) * speed);
+}
+
+function metronomeClicksFor(score: ScoreModel): ReturnType<typeof buildMetronomeClicks> {
+  let clicks = metronomeClickCache.get(score);
+  if (!clicks) {
+    clicks = buildMetronomeClicks(score);
+    metronomeClickCache.set(score, clicks);
+  }
+
+  return clicks;
 }
 
 function secondsBetweenPlaybackBeats(
@@ -203,9 +199,15 @@ export function useTonePlayback(): void {
         );
 
         if (state.settings.metronomeEnabled) {
-          const firstBeat = Math.ceil(startBeat - 0.0001);
-          for (let beat = firstBeat; beat < endBeat; beat += 1) {
-            const id = `metronome-${beat.toFixed(3)}`;
+          const clicks = metronomeClicksFor(score);
+          const firstClickIndex = firstEventIndexAtOrAfter(clicks, startBeat - 0.001);
+          for (let index = firstClickIndex; index < clicks.length; index += 1) {
+            const click = clicks[index];
+            if (click.absoluteBeat >= endBeat) {
+              break;
+            }
+
+            const id = `metronome-${click.absoluteBeat.toFixed(3)}`;
             if (scheduledRef.current.has(id)) {
               continue;
             }
@@ -216,14 +218,13 @@ export function useTonePlayback(): void {
                 score,
                 state.playbackEvents,
                 startBeat,
-                beat,
+                click.absoluteBeat,
                 state.settings.speed,
               );
-            const accented = isMeasureStartBeat(beat);
             void scheduleMetronomeClick(
               startTime,
-              accented,
-              state.settings.volume * (accented ? 0.62 : 0.42),
+              click.accented,
+              state.settings.volume * (click.accented ? 0.68 : 0.44),
             );
           }
         }

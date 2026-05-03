@@ -22,6 +22,10 @@ export type MeasureModel = {
   number: string;
   startBeat: number;
   durationBeats: number;
+  timeSignature: {
+    beats: number;
+    beatType: number;
+  };
   repeatStart: boolean;
   repeatEnd: boolean;
   endings: string[];
