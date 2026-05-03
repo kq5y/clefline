@@ -656,7 +656,13 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   const startScorePositionIndexBuild = useCallback(() => {
     const osmd = osmdRef.current;
     const view = viewRef.current;
-    if (!osmd || !view || !score || scorePositionsRef.current.length > 0) {
+    if (
+      !osmd ||
+      !view ||
+      !score ||
+      scorePositionsRef.current.length > 0 ||
+      usePracticeStore.getState().isPlaying
+    ) {
       return;
     }
 
@@ -811,6 +817,12 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     startScorePositionIndexBuild();
     const frame = (frameTime: number) => {
       const state = usePracticeStore.getState();
+      if (state.isPlaying && scorePositionsRef.current.length === 0) {
+        positionBuildCancelRef.current?.();
+        positionBuildCancelRef.current = undefined;
+      } else if (!state.isPlaying) {
+        startScorePositionIndexBuild();
+      }
       const positionBeats = displayPlaybackBeat(state, playbackAnchorRef.current, frameTime);
       updateScorePosition(sourceBeatAt(state.playbackEvents, positionBeats), frameTime);
       animationFrameRef.current = window.requestAnimationFrame(frame);

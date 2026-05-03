@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useEffect, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
 import { usePracticeStore } from "../store/practiceStore";
 import { NoteRiver } from "./NoteRiver";
 import { PlaybackMetadata } from "./PlaybackMetadata";
@@ -9,18 +9,6 @@ const ScoreView = lazy(loadScoreView);
 
 function preloadScoreView(): void {
   void loadScoreView();
-}
-
-function scheduleScoreWarmup(callback: () => void): () => void {
-  if (window.requestIdleCallback && window.cancelIdleCallback) {
-    const id = window.requestIdleCallback(callback, { timeout: 900 });
-
-    return () => window.cancelIdleCallback(id);
-  }
-
-  const id = window.setTimeout(callback, 250);
-
-  return () => window.clearTimeout(id);
 }
 
 const RiverPlaybackLayer = memo(function RiverPlaybackLayer() {
@@ -42,6 +30,7 @@ export const PlaybackSurface = memo(function PlaybackSurface() {
   const score = usePracticeStore((state) => state.score);
   const viewMode = usePracticeStore((state) => state.settings.viewMode);
   const [scoreMounted, setScoreMounted] = useState(false);
+  const previousScoreRef = useRef(score);
 
   const scoreVisible = viewMode === "score";
 
@@ -52,32 +41,17 @@ export const PlaybackSurface = memo(function PlaybackSurface() {
     }
 
     preloadScoreView();
-    if (scoreVisible) {
-      setScoreMounted(true);
+    if (previousScoreRef.current !== score) {
+      previousScoreRef.current = score;
+      setScoreMounted(scoreVisible);
       return undefined;
     }
 
-    let cancelled = false;
-    let cancelWarmup: (() => void) | undefined;
-    const runWarmup = () => {
-      if (cancelled) {
-        return;
-      }
-
-      if (usePracticeStore.getState().isPlaying) {
-        cancelWarmup = scheduleScoreWarmup(runWarmup);
-        return;
-      }
-
+    if (scoreVisible) {
       setScoreMounted(true);
-    };
+    }
 
-    cancelWarmup = scheduleScoreWarmup(runWarmup);
-
-    return () => {
-      cancelled = true;
-      cancelWarmup?.();
-    };
+    return undefined;
   }, [score, scoreVisible]);
 
   return (
