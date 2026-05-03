@@ -92,6 +92,10 @@
   pointer-events: none;
 }
 
+.playback-metadata[hidden] {
+  display: none;
+}
+
 .playback-metadata span {
   border: 1px solid rgb(255 255 255 / 12%);
   border-radius: 999px;

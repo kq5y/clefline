@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 test("loads the public sample and switches between river and score views", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Clefline" })).toBeVisible();
+  await expect(page.getByLabel("Playback metadata")).toBeHidden();
   await expect(page.getByLabel("Piano keyboard")).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => document.body.scrollHeight <= window.innerHeight + 1))
