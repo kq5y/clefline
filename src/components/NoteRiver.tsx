@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { pianoKeyLayoutForMidi, type PianoKeyLayout } from "../lib/pianoLayout";
 import { buildGlissandoSegments } from "../lib/musicxml/glissando";
 import {
@@ -18,9 +18,9 @@ type NoteRiverProps = {
 };
 
 const BASE_LOOK_AHEAD_BEATS = 4;
-const RENDER_BUFFER_BEATS = 1.5;
-const REANCHOR_AHEAD_BEATS = 0.75;
-const REANCHOR_BEHIND_BEATS = 0.25;
+const RENDER_BUFFER_BEATS = 2.5;
+const REANCHOR_AHEAD_BEATS = 1.45;
+const REANCHOR_BEHIND_BEATS = 0.55;
 const LOOK_BEHIND_BEATS = 0.5;
 const STRIKE_Y = 100;
 
@@ -330,7 +330,7 @@ export const NoteRiver = memo(function NoteRiver({
     updateMotion(nextBeat);
   }, [score, updateMotion]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     windowBeatRef.current = windowBeat;
     pendingWindowBeatRef.current = undefined;
     updateMotion(latestPositionBeatRef.current);
