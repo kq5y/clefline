@@ -1,73 +1,43 @@
-# React + TypeScript + Vite
+# Piano River
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Piano River is a fullscreen browser app for beginner piano practice. It loads
+MusicXML, shows a falling-note piano roll, highlights an 88-key keyboard, and can
+switch to a notation view rendered by OpenSheetMusicDisplay.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React 19, Vite 8, TypeScript 6
+- `pnpm` only for package management
+- `oxlint` for linting and `oxfmt` for formatting
+- OpenSheetMusicDisplay for notation rendering
+- Tone.js for browser audio playback
+- Vitest and Playwright for automated checks
 
-## React Compiler
+## Commands
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+```sh
+pnpm install
+pnpm dev
+pnpm check
+pnpm build
+pnpm test:e2e
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+`pnpm check` runs type checking, oxlint, and unit tests. The app is a static SPA,
+so Cloudflare Pages and Vercel can deploy it from `pnpm build` with `dist/` as
+the output directory.
 
-```js
-// eslint.config.js
-import reactX from "eslint-plugin-react-x";
-import reactDom from "eslint-plugin-react-dom";
+## Samples
 
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs["recommended-typescript"],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
-```
+Only `public/samples/sample_science.musicxml` is public and committed. Other
+local samples such as `sample_ray.musicxml` and `sample_spica.musicxml` are for
+private validation only and must not be committed or published. `.gitignore`
+contains explicit guards for those files and `private-samples/`.
+
+## Current Scope
+
+The v1 parser targets MuseScore-style single Piano part MusicXML with two staves.
+Staff 1 is treated as right hand and staff 2 as left hand. The parser detects
+ties, chords, grace notes, arpeggios, dynamics, wedges, articulations,
+glissando, octave shifts, and repeat-navigation markers. Repeat paths that
+cannot be expanded deterministically are surfaced as score warnings.

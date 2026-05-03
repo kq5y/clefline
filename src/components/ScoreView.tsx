@@ -1,4 +1,3 @@
-import { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 import { useEffect, useRef, useState } from "react";
 import type { ScoreModel } from "../lib/musicxml";
 
@@ -27,16 +26,15 @@ export function ScoreView({ score, positionBeats }: ScoreViewProps) {
     container.innerHTML = "";
     setError(undefined);
 
-    const osmd = new OpenSheetMusicDisplay(container, {
-      backend: "svg",
-      autoResize: true,
-      drawTitle: true,
-      drawingParameters: "compacttight",
-    });
-
-    void osmd
-      .load(score.rawXml)
-      .then(() => {
+    void import("opensheetmusicdisplay")
+      .then(async ({ OpenSheetMusicDisplay }) => {
+        const osmd = new OpenSheetMusicDisplay(container, {
+          backend: "svg",
+          autoResize: true,
+          drawTitle: true,
+          drawingParameters: "compacttight",
+        });
+        await osmd.load(score.rawXml);
         if (!cancelled) {
           osmd.render();
         }
