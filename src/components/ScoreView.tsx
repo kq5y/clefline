@@ -56,28 +56,6 @@ const MAX_CURSOR_STEPS = 12_000;
 const SCORE_ROW_GAP_PX = 140;
 const SCORE_ROW_WRAP_THRESHOLD_RATIO = 0.22;
 
-function currentMeasure(score: ScoreModel, positionBeats: number): string {
-  if (positionBeats < 0) {
-    return "0";
-  }
-
-  let low = 0;
-  let high = score.measures.length - 1;
-  let match = -1;
-
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    if (score.measures[middle].startBeat <= positionBeats) {
-      match = middle;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-
-  return score.measures[match]?.number ?? score.measures[0]?.number ?? "1";
-}
-
 function visibleCursorElement(view: HTMLDivElement): HTMLElement | undefined {
   const cursor =
     (Array.from(view.querySelectorAll("img[id*=cursor]")) as HTMLElement[]).find((element) => {
@@ -494,13 +472,11 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   const viewRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const measureRef = useRef<HTMLDivElement | null>(null);
   const glissandoOverlayRef = useRef<SVGSVGElement | null>(null);
   const osmdRef = useRef<OSMDInstance | null>(null);
   const scorePositionsRef = useRef<ScorePosition[]>([]);
   const highlightedNotesRef = useRef<ColorableGraphicalNote[]>([]);
   const highlightedIndexRef = useRef(-1);
-  const latestMeasureRef = useRef<string | undefined>(undefined);
   const pendingPositionRef = useRef<number | undefined>(undefined);
   const animationFrameRef = useRef<number | undefined>(undefined);
   const scoreOffsetRef = useRef<ScoreOffset>({ x: 0, y: 0 });
@@ -518,14 +494,6 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       const track = trackRef.current;
       if (!view || !track || !score || score.totalBeats <= 0) {
         return;
-      }
-
-      if (measureRef.current) {
-        const nextMeasure = currentMeasure(score, positionBeats);
-        if (nextMeasure !== latestMeasureRef.current) {
-          latestMeasureRef.current = nextMeasure;
-          measureRef.current.textContent = `Measure ${nextMeasure}`;
-        }
       }
 
       const scorePositions = scorePositionsRef.current;
@@ -594,7 +562,6 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     glissandoOverlay?.replaceChildren();
     osmdRef.current = null;
     scorePositionsRef.current = [];
-    latestMeasureRef.current = undefined;
     setScoreOffset({ x: 0, y: 0 });
     setError(undefined);
 
@@ -686,7 +653,6 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       colorScoreNotes(highlightedNotesRef.current, "#000000");
       highlightedNotesRef.current = [];
       highlightedIndexRef.current = -1;
-      latestMeasureRef.current = undefined;
       setScoreOffset({ x: 0, y: 0 });
       scorePositionsRef.current = [];
       glissandoOverlay?.replaceChildren();
@@ -730,16 +696,6 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   return (
     <div className="score-view">
       <div className="score-playback-line" aria-hidden="true" />
-      <div className="score-current-measure" ref={measureRef}>
-        Measure{" "}
-        {currentMeasure(
-          score,
-          sourceBeatAt(
-            usePracticeStore.getState().playbackEvents,
-            usePracticeStore.getState().positionBeats,
-          ),
-        )}
-      </div>
       {error ? <div className="score-error">{error}</div> : null}
       <div className="score-scroll" ref={viewRef}>
         <div className="score-track" ref={trackRef}>

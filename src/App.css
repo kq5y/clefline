@@ -554,7 +554,6 @@ input:focus-visible {
   pointer-events: none;
 }
 
-.score-current-measure,
 .score-error {
   position: absolute;
   z-index: 4;
@@ -567,11 +566,6 @@ input:focus-visible {
   box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
   color: #30343c;
   font-size: 12px;
-}
-
-.score-current-measure {
-  left: 50%;
-  transform: translateX(-50%);
 }
 
 .score-error {
