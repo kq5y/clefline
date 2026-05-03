@@ -18,8 +18,9 @@ playwright-report
 package-lock.json
 bun.lock
 
-# Private validation scores. Only sample_science.musicxml may be committed.
+# Private validation scores. Only bach-minuet.musicxml may be committed.
 private-samples/
+sample_science.musicxml
 sample_ray.musicxml
 sample_spica.musicxml
 

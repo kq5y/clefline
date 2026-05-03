@@ -34,6 +34,38 @@ function queryText(parent: ParentNode, selector: string): string | undefined {
   return parent.querySelector(selector)?.textContent?.trim() || undefined;
 }
 
+function creditText(root: Element, creditType: string): string | undefined {
+  for (const credit of elements(root, "credit")) {
+    if (text(credit, "credit-type") !== creditType) {
+      continue;
+    }
+
+    const words = elements(credit, "credit-words")
+      .map((word) => word.textContent?.trim())
+      .filter(Boolean)
+      .join(" ");
+    if (words) {
+      return words;
+    }
+  }
+
+  return undefined;
+}
+
+function firstCreditWords(root: Element): string | undefined {
+  for (const credit of elements(root, "credit")) {
+    const words = elements(credit, "credit-words")
+      .map((word) => word.textContent?.trim())
+      .filter(Boolean)
+      .join(" ");
+    if (words) {
+      return words;
+    }
+  }
+
+  return undefined;
+}
+
 function numberText(parent: ParentNode, tagName: string, fallback = 0): number {
   const value = text(parent, tagName);
   const parsed = value === undefined ? Number.NaN : Number(value);
@@ -82,7 +114,12 @@ function parseMetadata(root: Element): ScoreMetadata {
   const scorePart = first(first(root, "part-list") ?? root, "score-part");
 
   return {
-    title: queryText(root, "work > work-title") || text(root, "movement-title") || "Untitled Score",
+    title:
+      queryText(root, "work > work-title") ||
+      text(root, "movement-title") ||
+      creditText(root, "title") ||
+      firstCreditWords(root) ||
+      "Untitled Score",
     composer: elements(identification ?? root, "creator")
       .find((creator) => attr(creator, "type") === "composer")
       ?.textContent?.trim(),

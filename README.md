@@ -1,6 +1,6 @@
-# Piano River
+# Clefline
 
-Piano River is a fullscreen browser app for beginner piano practice. It loads
+Clefline is a fullscreen browser app for beginner piano practice. It loads
 MusicXML, shows a falling-note piano roll, highlights an 88-key keyboard, and can
 switch to a notation view rendered by OpenSheetMusicDisplay.
 
@@ -30,10 +30,15 @@ the output directory.
 
 ## Samples
 
-Only `public/samples/sample_science.musicxml` is public and committed. Other
-local samples such as `sample_ray.musicxml` and `sample_spica.musicxml` are for
-private validation only and must not be committed or published. `.gitignore`
-contains explicit guards for those files and `private-samples/`.
+Only `public/samples/bach-minuet.musicxml` is public and committed. It is
+`Bach_Minuet_in_G_Major_BWV_Anh._114.mxl` from the MuseTrainer public domain
+MusicXML library, extracted to uncompressed MusicXML. The score file declares
+`Public Domain (PianoXML typeset)` in its MusicXML rights metadata.
+
+Other local samples such as `sample_science.musicxml`, `sample_ray.musicxml`,
+and `sample_spica.musicxml` are for private validation only and must not be
+committed or published. `.gitignore` contains explicit guards for those files
+and `private-samples/`.
 
 ## Current Scope
 

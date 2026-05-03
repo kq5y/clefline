@@ -72,6 +72,7 @@ export const Controls = memo(function Controls() {
   const reset = usePracticeStore((state) => state.reset);
   const seekByMeasures = usePracticeStore((state) => state.seekByMeasures);
   const updateSettings = usePracticeStore((state) => state.updateSettings);
+  const displayTitle = score?.metadata.title?.trim() || "Clefline";
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -140,12 +141,12 @@ export const Controls = memo(function Controls() {
     <>
       <header className="topbar" onPointerUpCapture={blurPointerButton}>
         <div className="brand-block">
-          <h1>Piano River</h1>
+          <h1>{displayTitle}</h1>
         </div>
         <div className="file-actions">
           <button type="button" className="icon-button" onClick={() => void loadSample()}>
             <FileMusic size={17} />
-            Science sample
+            Sample score
           </button>
           <label className="icon-button file-picker">
             <Upload size={17} />

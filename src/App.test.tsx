@@ -6,7 +6,7 @@ describe("App shell", () => {
   it("renders the piano practice shell", () => {
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "Piano River" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Clefline" })).toBeInTheDocument();
     expect(screen.getByLabelText("Music viewer")).toBeInTheDocument();
     expect(screen.getByLabelText("Piano keyboard")).toBeInTheDocument();
   });

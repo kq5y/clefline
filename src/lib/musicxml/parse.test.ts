@@ -4,26 +4,25 @@ import { describe, expect, it } from "vitest";
 import { parseMusicXml } from "./parse";
 import { buildPlaybackEvents, buildPlaybackSections } from "./timeline";
 
-const samplePath = resolve(process.cwd(), "public/samples/sample_science.musicxml");
+const samplePath = resolve(process.cwd(), "public/samples/bach-minuet.musicxml");
 
 describe("parseMusicXml", () => {
-  it("extracts the public science sample into a practice score model", async () => {
+  it("extracts the public Bach minuet sample into a practice score model", async () => {
     const xml = await readFile(samplePath, "utf8");
     const score = parseMusicXml(xml);
     const playback = buildPlaybackEvents(score);
+    const sections = buildPlaybackSections(score);
 
-    expect(score.metadata.title).toBe("Science");
+    expect(score.metadata.title).toBe("Minuet in G Major");
+    expect(score.metadata.partName).toBe("Piano");
     expect(score.metadata.software).toContain("MuseScore");
-    expect(score.measures).toHaveLength(89);
-    expect(score.notes.length).toBeGreaterThan(1000);
-    expect(playback.length).toBeGreaterThan(500);
+    expect(score.measures).toHaveLength(32);
+    expect(score.notes.length).toBeGreaterThan(180);
+    expect(playback.length).toBeGreaterThan(score.notes.length);
+    expect(sections.length).toBeGreaterThan(1);
     expect(score.directions.some((direction) => direction.kind === "dynamic")).toBe(true);
-    expect(score.directions.filter((direction) => direction.kind === "wedge")).toHaveLength(6);
-    expect(score.notes.filter((note) => note.tieStart)).toHaveLength(54);
-    expect(score.notes.filter((note) => note.tieStop)).toHaveLength(54);
-    expect(score.notes.some((note) => note.notations.some((n) => n.type === "arpeggiate"))).toBe(
-      true,
-    );
+    expect(score.directions.some((direction) => direction.kind === "wedge")).toBe(true);
+    expect(score.measures.some((measure) => measure.repeatEnd)).toBe(true);
     expect(score.notes.some((note) => note.notations.some((n) => n.type === "staccato"))).toBe(
       true,
     );

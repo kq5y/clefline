@@ -417,8 +417,8 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       positionBeats: minimumPositionBeats(get().score),
     });
     try {
-      const loaded = await fetchMusicXml("/samples/sample_science.musicxml");
-      get().loadXml(loaded.xml, "sample_science.musicxml");
+      const loaded = await fetchMusicXml("/samples/bach-minuet.musicxml");
+      get().loadXml(loaded.xml, "bach-minuet.musicxml");
     } catch (error) {
       set({
         isLoading: false,
