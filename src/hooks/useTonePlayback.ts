@@ -1,116 +1,83 @@
 import { useEffect, useRef } from "react";
-import { initialTempo, usePracticeStore } from "../store/practiceStore";
+import { ensurePianoEngine, releaseAllPianoKeys, scheduleMidi } from "../lib/audio/pianoEngine";
+import { initialTempo, loopBounds, usePracticeStore } from "../store/practiceStore";
 
-type ToneSynth = {
-  triggerAttackRelease: (
-    notes: string | string[],
-    duration: number | string,
-    time?: number,
-    velocity?: number,
-  ) => void;
-  releaseAll: () => void;
-  dispose: () => void;
-  volume: { value: number };
-};
-
-function volumeToDb(volume: number): number {
-  return volume <= 0 ? -60 : 20 * Math.log10(volume);
-}
+const SCHEDULE_INTERVAL_MS = 25;
+const LOOK_AHEAD_SECONDS = 0.16;
 
 export function useTonePlayback(): void {
-  const synthRef = useRef<ToneSynth | undefined>(undefined);
+  const scheduledRef = useRef<Set<string>>(new Set());
   const previousPositionRef = useRef(0);
+  const wasPlayingRef = useRef(false);
   const isPlaying = usePracticeStore((state) => state.isPlaying);
-  const score = usePracticeStore((state) => state.score);
-  const playbackEvents = usePracticeStore((state) => state.playbackEvents);
-  const positionBeats = usePracticeStore((state) => state.positionBeats);
-  const settings = usePracticeStore((state) => state.settings);
 
   useEffect(() => {
-    let disposed = false;
-
-    async function ensureSynth(): Promise<ToneSynth> {
-      if (synthRef.current) {
-        return synthRef.current;
+    if (!isPlaying) {
+      scheduledRef.current.clear();
+      previousPositionRef.current = usePracticeStore.getState().positionBeats;
+      if (wasPlayingRef.current) {
+        void releaseAllPianoKeys();
       }
-
-      const Tone = await import("tone");
-      await Tone.start();
-      const synth = new Tone.PolySynth(Tone.Synth, {
-        oscillator: { type: "triangle8" },
-        envelope: {
-          attack: 0.006,
-          decay: 0.18,
-          sustain: 0.36,
-          release: 0.85,
-        },
-      }).toDestination() as ToneSynth;
-
-      synth.volume.value = volumeToDb(settings.volume);
-      if (!disposed) {
-        synthRef.current = synth;
-      }
-
-      return synth;
+      wasPlayingRef.current = false;
+      return undefined;
     }
 
-    async function playDueEvents() {
-      if (!isPlaying || !score) {
-        synthRef.current?.releaseAll();
-        previousPositionRef.current = positionBeats;
+    wasPlayingRef.current = true;
+    let cancelled = false;
+    const schedule = async () => {
+      const state = usePracticeStore.getState();
+      const score = state.score;
+      if (!score || !state.isPlaying) {
         return;
       }
 
-      const previous = previousPositionRef.current;
-      previousPositionRef.current = positionBeats;
-
-      if (positionBeats < previous) {
-        synthRef.current?.releaseAll();
-        return;
+      if (state.positionBeats < previousPositionRef.current) {
+        scheduledRef.current.clear();
       }
+      previousPositionRef.current = state.positionBeats;
 
-      const dueEvents = playbackEvents.filter(
-        (event) => event.absoluteBeat >= previous && event.absoluteBeat < positionBeats,
+      const backend = await ensurePianoEngine();
+      if (cancelled) return;
+
+      const beatRate = (initialTempo(score) / 60) * state.settings.speed;
+      const beatSeconds = 1 / beatRate;
+      const startBeat = state.positionBeats;
+      const bounds = loopBounds(score, state.settings);
+      const endBeat = Math.min(
+        bounds?.endBeat ?? score.totalBeats,
+        startBeat + LOOK_AHEAD_SECONDS * beatRate,
       );
-      if (dueEvents.length === 0) {
-        return;
-      }
 
-      const Tone = await import("tone");
-      const synth = await ensureSynth();
-      synth.volume.value = volumeToDb(settings.volume);
-      const beatSeconds = 60 / initialTempo(score) / settings.speed;
-
-      for (const event of dueEvents) {
+      for (const event of state.playbackEvents) {
+        if (event.absoluteBeat < startBeat || event.absoluteBeat >= endBeat) {
+          continue;
+        }
+        if (scheduledRef.current.has(event.id)) {
+          continue;
+        }
+        scheduledRef.current.add(event.id);
+        const startTime = backend.Tone.now() + (event.absoluteBeat - startBeat) * beatSeconds;
         const duration = Math.max(0.05, event.durationBeats * beatSeconds * 0.92);
-        const notes = event.notes.map((note) => note.pitchName);
-        if (event.rollOffsetBeats > 0) {
-          for (const [index, note] of notes.entries()) {
-            synth.triggerAttackRelease(
-              note,
-              duration,
-              Tone.now() + index * event.rollOffsetBeats * beatSeconds,
-              settings.volume,
-            );
-          }
-        } else {
-          synth.triggerAttackRelease(notes, duration, undefined, settings.volume);
+
+        for (const [index, note] of event.notes.entries()) {
+          void scheduleMidi(
+            note.midi,
+            startTime + index * event.rollOffsetBeats * beatSeconds,
+            duration,
+            state.settings.volume,
+          );
         }
       }
-    }
+    };
 
-    void playDueEvents();
+    void schedule();
+    const interval = window.setInterval(() => {
+      void schedule();
+    }, SCHEDULE_INTERVAL_MS);
 
     return () => {
-      disposed = true;
+      cancelled = true;
+      window.clearInterval(interval);
     };
-  }, [isPlaying, playbackEvents, positionBeats, score, settings]);
-
-  useEffect(
-    () => () => {
-      synthRef.current?.dispose();
-      synthRef.current = undefined;
-    },
-    [],
-  );
+  }, [isPlaying]);
 }

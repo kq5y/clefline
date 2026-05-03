@@ -1,5 +1,19 @@
-import { BookOpen, FileMusic, Music2, Pause, Play, RotateCcw, Upload, Waves } from "lucide-react";
-import type { ChangeEvent } from "react";
+import {
+  BookOpen,
+  FileMusic,
+  Info,
+  Music2,
+  PanelRight,
+  Pause,
+  Play,
+  RotateCcw,
+  SlidersHorizontal,
+  Upload,
+  Waves,
+  X,
+} from "lucide-react";
+import { useState, type ChangeEvent } from "react";
+import { ensurePianoEngine } from "../lib/audio/pianoEngine";
 import {
   activeMidiAt,
   handModeLabel,
@@ -9,6 +23,8 @@ import {
 } from "../store/practiceStore";
 
 export function Controls() {
+  const [openPanel, setOpenPanel] = useState<"info" | "practice" | undefined>();
+  const [audioLoading, setAudioLoading] = useState(false);
   const score = usePracticeStore((state) => state.score);
   const loadedName = usePracticeStore((state) => state.loadedName);
   const isLoading = usePracticeStore((state) => state.isLoading);
@@ -34,12 +50,25 @@ export function Controls() {
   const loop = loopBounds(score, settings);
   const currentMeasure =
     score?.measures.findLast((measure) => measure.startBeat <= positionBeats)?.number ?? "1";
+  const onPlayClick = async () => {
+    if (isPlaying) {
+      togglePlaying();
+      return;
+    }
+
+    setAudioLoading(true);
+    try {
+      await ensurePianoEngine();
+      togglePlaying();
+    } finally {
+      setAudioLoading(false);
+    }
+  };
 
   return (
     <>
       <header className="topbar">
         <div className="brand-block">
-          <p className="eyebrow">MusicXML piano practice</p>
           <h1>Piano River</h1>
         </div>
         <div className="file-actions">
@@ -52,139 +81,196 @@ export function Controls() {
             Load MusicXML
             <input accept=".musicxml,.xml,.mxl" type="file" onChange={onFileChange} />
           </label>
-        </div>
-      </header>
-      <section className="status-strip" aria-live="polite">
-        <span>{isLoading ? "Loading score..." : loadedName ? loadedName : "No score loaded"}</span>
-        {score ? (
-          <>
-            <span>{score.measures.length} measures</span>
-            <span>{Math.round(initialTempo(score))} BPM</span>
-            <span>Measure {currentMeasure}</span>
-            <span>{handModeLabel(settings.handMode)}</span>
-            <span>{activeNotes} active notes</span>
-            {loop ? (
-              <span>
-                Loop {settings.loopStartMeasure}-{settings.loopEndMeasure}
-              </span>
-            ) : null}
-            {score.warnings.length > 0 ? (
-              <strong>{score.warnings.length} score warnings</strong>
-            ) : null}
-          </>
-        ) : null}
-        {loadError ? <strong>{loadError}</strong> : null}
-      </section>
-      <section className="transport" aria-label="Practice controls">
-        <div className="button-cluster">
-          <button type="button" className="round-button" onClick={togglePlaying} disabled={!score}>
+          <button
+            type="button"
+            className="round-button"
+            onClick={() => void onPlayClick()}
+            disabled={!score || audioLoading}
+          >
             {isPlaying ? <Pause size={18} /> : <Play size={18} />}
           </button>
           <button type="button" className="round-button" onClick={reset} disabled={!score}>
             <RotateCcw size={18} />
           </button>
-        </div>
-        <div className="segmented" aria-label="View mode">
-          <button
-            type="button"
-            className={settings.viewMode === "river" ? "selected" : ""}
-            onClick={() => updateSettings({ viewMode: "river" })}
-          >
-            <Waves size={15} />
-            River
-          </button>
-          <button
-            type="button"
-            className={settings.viewMode === "score" ? "selected" : ""}
-            onClick={() => updateSettings({ viewMode: "score" })}
-          >
-            <BookOpen size={15} />
-            Score
-          </button>
-        </div>
-        <label className="slider-control">
-          Speed
-          <input
-            max="1.25"
-            min="0.25"
-            step="0.05"
-            type="range"
-            value={settings.speed}
-            onChange={(event) => updateSettings({ speed: Number(event.target.value) })}
-          />
-          <span>{Math.round(settings.speed * 100)}%</span>
-        </label>
-        <label className="slider-control">
-          Volume
-          <input
-            max="1"
-            min="0"
-            step="0.05"
-            type="range"
-            value={settings.volume}
-            onChange={(event) => updateSettings({ volume: Number(event.target.value) })}
-          />
-          <span>{Math.round(settings.volume * 100)}%</span>
-        </label>
-        <label className="toggle-control">
-          <input
-            type="checkbox"
-            checked={settings.loopEnabled}
-            disabled={!score}
-            onChange={(event) => updateSettings({ loopEnabled: event.target.checked })}
-          />
-          Loop
-        </label>
-        <label className="select-control">
-          A
-          <select
-            disabled={!score}
-            value={settings.loopStartMeasure ?? ""}
-            onChange={(event) => updateSettings({ loopStartMeasure: event.target.value })}
-          >
-            {score?.measures.map((measure) => (
-              <option key={measure.index} value={measure.number}>
-                {measure.number}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-control">
-          B
-          <select
-            disabled={!score}
-            value={settings.loopEndMeasure ?? ""}
-            onChange={(event) => updateSettings({ loopEndMeasure: event.target.value })}
-          >
-            {score?.measures.map((measure) => (
-              <option key={measure.index} value={measure.number}>
-                {measure.number}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="segmented" aria-label="Hand mode">
-          {(["both", "right", "left"] as const).map((handMode) => (
+          <div className="segmented compact" aria-label="View mode">
             <button
               type="button"
-              className={settings.handMode === handMode ? "selected" : ""}
-              key={handMode}
-              onClick={() => updateSettings({ handMode })}
+              className={settings.viewMode === "river" ? "selected" : ""}
+              onClick={() => updateSettings({ viewMode: "river" })}
             >
-              <Music2 size={15} />
-              {handMode === "both" ? "Both" : handMode === "right" ? "Right" : "Left"}
+              <Waves size={15} />
+              River
             </button>
-          ))}
+            <button
+              type="button"
+              className={settings.viewMode === "score" ? "selected" : ""}
+              onClick={() => updateSettings({ viewMode: "score" })}
+            >
+              <BookOpen size={15} />
+              Score
+            </button>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => setOpenPanel(openPanel === "practice" ? undefined : "practice")}
+          >
+            <SlidersHorizontal size={17} />
+            Practice
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => setOpenPanel(openPanel === "info" ? undefined : "info")}
+          >
+            <Info size={17} />
+            Info
+          </button>
         </div>
-        <label className="toggle-control">
-          <input
-            type="checkbox"
-            checked={settings.showNoteNames}
-            onChange={(event) => updateSettings({ showNoteNames: event.target.checked })}
-          />
-          Names
-        </label>
-      </section>
+      </header>
+      {loadError ? <div className="toast-error">{loadError}</div> : null}
+      {isLoading || audioLoading ? (
+        <div className="toast-info">{audioLoading ? "Loading piano..." : "Loading score..."}</div>
+      ) : null}
+      {openPanel ? (
+        <button
+          type="button"
+          aria-label="Close options backdrop"
+          className="side-backdrop"
+          onClick={() => setOpenPanel(undefined)}
+        />
+      ) : null}
+      <aside className={openPanel ? "side-panel open" : "side-panel"} aria-label="Options panel">
+        <div className="side-panel-header">
+          <span>{openPanel === "info" ? "Score info" : "Practice"}</span>
+          <button
+            type="button"
+            aria-label="Close options"
+            className="round-button"
+            onClick={() => setOpenPanel(undefined)}
+          >
+            <X size={17} />
+          </button>
+        </div>
+        {openPanel === "info" ? (
+          <div className="panel-stack">
+            <div className="panel-card">
+              <strong>{loadedName ?? "No score loaded"}</strong>
+              {score ? (
+                <>
+                  <span>{score.measures.length} measures</span>
+                  <span>{Math.round(initialTempo(score))} BPM</span>
+                  <span>Measure {currentMeasure}</span>
+                  <span>{handModeLabel(settings.handMode)}</span>
+                  <span>{activeNotes} active notes</span>
+                  {loop ? (
+                    <span>
+                      Loop {settings.loopStartMeasure}-{settings.loopEndMeasure}
+                    </span>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+            {score?.warnings.map((warning) => (
+              <div className="panel-warning" key={`${warning.code}-${warning.measureNumber}`}>
+                <strong>{warning.code}</strong>
+                <span>{warning.message}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {openPanel === "practice" ? (
+          <div className="panel-stack">
+            <label className="slider-control stacked">
+              Speed
+              <input
+                max="1.25"
+                min="0.25"
+                step="0.05"
+                type="range"
+                value={settings.speed}
+                onChange={(event) => updateSettings({ speed: Number(event.target.value) })}
+              />
+              <span>{Math.round(settings.speed * 100)}%</span>
+            </label>
+            <label className="slider-control stacked">
+              Volume
+              <input
+                max="1"
+                min="0"
+                step="0.05"
+                type="range"
+                value={settings.volume}
+                onChange={(event) => updateSettings({ volume: Number(event.target.value) })}
+              />
+              <span>{Math.round(settings.volume * 100)}%</span>
+            </label>
+            <label className="toggle-control">
+              <input
+                type="checkbox"
+                checked={settings.loopEnabled}
+                disabled={!score}
+                onChange={(event) => updateSettings({ loopEnabled: event.target.checked })}
+              />
+              Loop
+            </label>
+            <div className="range-row">
+              <label className="select-control">
+                A
+                <select
+                  disabled={!score}
+                  value={settings.loopStartMeasure ?? ""}
+                  onChange={(event) => updateSettings({ loopStartMeasure: event.target.value })}
+                >
+                  {score?.measures.map((measure) => (
+                    <option key={measure.index} value={measure.number}>
+                      {measure.number}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="select-control">
+                B
+                <select
+                  disabled={!score}
+                  value={settings.loopEndMeasure ?? ""}
+                  onChange={(event) => updateSettings({ loopEndMeasure: event.target.value })}
+                >
+                  {score?.measures.map((measure) => (
+                    <option key={measure.index} value={measure.number}>
+                      {measure.number}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="segmented wrapped" aria-label="Hand mode">
+              {(["both", "right", "left"] as const).map((handMode) => (
+                <button
+                  type="button"
+                  className={settings.handMode === handMode ? "selected" : ""}
+                  key={handMode}
+                  onClick={() => updateSettings({ handMode })}
+                >
+                  <Music2 size={15} />
+                  {handMode === "both" ? "Both" : handMode === "right" ? "Right" : "Left"}
+                </button>
+              ))}
+            </div>
+            <label className="toggle-control">
+              <input
+                type="checkbox"
+                checked={settings.showNoteNames}
+                onChange={(event) => updateSettings({ showNoteNames: event.target.checked })}
+              />
+              Names
+            </label>
+          </div>
+        ) : null}
+      </aside>
+      <div className="sidebar-edge" aria-hidden="true">
+        <PanelRight size={14} />
+      </div>
     </>
   );
 }

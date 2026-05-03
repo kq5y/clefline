@@ -13,6 +13,7 @@ function currentMeasure(score: ScoreModel, positionBeats: number): string {
 }
 
 export function ScoreView({ score, positionBeats }: ScoreViewProps) {
+  const viewRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | undefined>();
 
@@ -49,6 +50,17 @@ export function ScoreView({ score, positionBeats }: ScoreViewProps) {
     };
   }, [score]);
 
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !score || score.totalBeats <= 0) {
+      return;
+    }
+
+    const maxScroll = Math.max(0, view.scrollHeight - view.clientHeight);
+    const ratio = Math.min(1, Math.max(0, positionBeats / score.totalBeats));
+    view.scrollTo({ top: maxScroll * ratio, behavior: "auto" });
+  }, [positionBeats, score]);
+
   if (!score) {
     return (
       <div className="empty-state">
@@ -58,7 +70,8 @@ export function ScoreView({ score, positionBeats }: ScoreViewProps) {
   }
 
   return (
-    <div className="score-view">
+    <div className="score-view" ref={viewRef}>
+      <div className="score-follow-line" aria-hidden="true" />
       <div className="score-current-measure">Measure {currentMeasure(score, positionBeats)}</div>
       {error ? <div className="score-error">{error}</div> : null}
       <div className="score-canvas" ref={containerRef} />

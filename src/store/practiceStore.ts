@@ -44,7 +44,7 @@ type PracticeState = {
 
 const DEFAULT_SETTINGS: PracticeSettings = {
   viewMode: "river",
-  speed: 0.75,
+  speed: 1,
   loopEnabled: false,
   handMode: "both",
   volume: 0.75,
@@ -94,6 +94,21 @@ export function activeMidiAt(events: PlaybackEvent[], positionBeats: number): nu
         .flatMap((event) => event.notes.map((note) => note.midi)),
     ),
   );
+}
+
+export function activeNotesAt(events: PlaybackEvent[], positionBeats: number) {
+  return events
+    .filter(
+      (event) =>
+        event.absoluteBeat <= positionBeats &&
+        event.absoluteBeat + Math.max(event.durationBeats, 0.1) > positionBeats,
+    )
+    .flatMap((event) =>
+      event.notes.map((note) => ({
+        midi: note.midi,
+        hand: note.hand,
+      })),
+    );
 }
 
 export const usePracticeStore = create<PracticeState>((set, get) => ({

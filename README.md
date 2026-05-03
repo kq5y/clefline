@@ -10,7 +10,8 @@ switch to a notation view rendered by OpenSheetMusicDisplay.
 - `pnpm` only for package management
 - `oxlint` for linting and `oxfmt` for formatting
 - OpenSheetMusicDisplay for notation rendering
-- Tone.js for browser audio playback
+- Tone.js for browser audio playback. Piano playback uses Salamander Grand Piano sample URLs at
+  runtime, with no bundled audio files.
 - Vitest and Playwright for automated checks
 
 ## Commands

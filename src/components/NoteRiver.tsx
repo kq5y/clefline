@@ -54,12 +54,6 @@ export function NoteRiver({ score, positionBeats, handMode, showNoteNames }: Not
           const y = 92 - (delta / LOOK_AHEAD_BEATS) * 92;
           const height = Math.max(1.4, (note.durationBeats / LOOK_AHEAD_BEATS) * 92);
           const selected = includeVisual(handMode, note.hand);
-          const labels = note.notations
-            .filter((notation) =>
-              ["arpeggiate", "grace", "staccato", "accent", "glissando"].includes(notation.type),
-            )
-            .map((notation) => notation.type);
-
           return (
             <g key={note.id} opacity={selected ? 1 : 0.22}>
               <rect
@@ -70,11 +64,6 @@ export function NoteRiver({ score, positionBeats, handMode, showNoteNames }: Not
                 height={height}
                 rx="0.28"
               />
-              {labels.length > 0 ? (
-                <text x={xForMidi(note.midi) + 0.72} y={Math.max(4, y - height)}>
-                  {labels[0]}
-                </text>
-              ) : null}
             </g>
           );
         })}
