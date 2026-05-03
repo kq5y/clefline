@@ -8,12 +8,19 @@ import { ScoreView } from "./components/ScoreView";
 import { usePlaybackClock } from "./hooks/usePlaybackClock";
 import { useTonePlayback } from "./hooks/useTonePlayback";
 import { ensurePianoEngine } from "./lib/audio/pianoEngine";
-import { activeNotesAt, usePracticeStore } from "./store/practiceStore";
+import { activeNotesAt, minimumPositionBeats, usePracticeStore } from "./store/practiceStore";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
-    Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"))
+    Boolean(target.closest("input, textarea, select, [contenteditable='true']"))
+  );
+}
+
+function isButtonTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(target.closest("button, [role='button'], .icon-button"))
   );
 }
 
@@ -30,7 +37,10 @@ function App() {
     () => activeNotesAt(playbackEvents, positionBeats),
     [playbackEvents, positionBeats],
   );
-  const progress = score?.totalBeats ? (positionBeats / score.totalBeats) * 100 : 0;
+  const minimumPosition = minimumPositionBeats(score);
+  const progress = score?.totalBeats
+    ? ((positionBeats - minimumPosition) / (score.totalBeats - minimumPosition)) * 100
+    : 0;
   const handleDragOver = (event: DragEvent) => {
     event.preventDefault();
     setDragActive(true);
@@ -46,15 +56,26 @@ function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || event.repeat || isTypingTarget(event.target)) {
+      if (event.repeat || isTypingTarget(event.target)) {
         return;
       }
 
-      event.preventDefault();
       const state = usePracticeStore.getState();
       if (!state.score) {
         return;
       }
+
+      if (event.code === "ArrowLeft" || event.code === "ArrowRight") {
+        event.preventDefault();
+        state.seekByMeasures(event.code === "ArrowLeft" ? -1 : 1);
+        return;
+      }
+
+      if (event.code !== "Space" || isButtonTarget(event.target)) {
+        return;
+      }
+
+      event.preventDefault();
       if (state.isPlaying) {
         state.togglePlaying();
         return;
@@ -100,16 +121,15 @@ function App() {
             showNoteNames={settings.showNoteNames}
           />
         ) : (
-          <ScoreView
-            activeNotes={activeNotes}
-            playbackEvents={playbackEvents}
-            score={score}
-            positionBeats={positionBeats}
-          />
+          <ScoreView playbackEvents={playbackEvents} score={score} positionBeats={positionBeats} />
         )}
       </section>
       <section className="keyboard-shell" aria-label="Piano keyboard">
-        <PianoKeyboard activeNotes={activeNotes} showNoteNames={settings.showNoteNames} />
+        <PianoKeyboard
+          activeNotes={activeNotes}
+          showNoteNames={settings.showNoteNames}
+          volume={settings.volume}
+        />
       </section>
       {dragActive ? <div className="drop-overlay">Drop MusicXML here</div> : null}
     </main>

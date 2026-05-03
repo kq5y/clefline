@@ -6,6 +6,7 @@ import type { Hand } from "../lib/musicxml";
 type PianoKeyboardProps = {
   activeNotes: Array<{ midi: number; hand: Hand }>;
   showNoteNames: boolean;
+  volume: number;
 };
 
 function activeClass(hand: Hand | undefined, black: boolean): string {
@@ -26,14 +27,18 @@ function activeClass(hand: Hand | undefined, black: boolean): string {
 export const PianoKeyboard = memo(function PianoKeyboard({
   activeNotes,
   showNoteNames,
+  volume,
 }: PianoKeyboardProps) {
   const active = useMemo(
     () => new Map(activeNotes.map((note) => [note.midi, note.hand])),
     [activeNotes],
   );
-  const playKey = useCallback((midi: number) => {
-    void playMidiOnce(midi, 0.78);
-  }, []);
+  const playKey = useCallback(
+    (midi: number) => {
+      void playMidiOnce(midi, volume);
+    },
+    [volume],
+  );
 
   return (
     <div className="piano-keyboard">

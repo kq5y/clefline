@@ -41,6 +41,10 @@ function volumeToDb(volume: number): number {
   return volume <= 0 ? -60 : 20 * Math.log10(volume);
 }
 
+function clampVolume(volume: number): number {
+  return Math.min(1, Math.max(0, volume));
+}
+
 function samplerUrls(): Record<string, string> {
   return Object.fromEntries(
     SAMPLED_MIDI.map((midi) => {
@@ -84,14 +88,14 @@ export async function ensurePianoEngine(): Promise<AudioBackend> {
   return backendPromise;
 }
 
-export async function playMidiOnce(midi: number, velocity: number, seconds = 0.7): Promise<void> {
+export async function playMidiOnce(midi: number, volume: number, seconds = 0.7): Promise<void> {
   const backend = await ensurePianoEngine();
-  backend.instrument.volume.value = volumeToDb(velocity);
+  backend.instrument.volume.value = volumeToDb(clampVolume(volume));
   backend.instrument.triggerAttackRelease(
     backend.Tone.Frequency(midi, "midi").toNote(),
     seconds,
     undefined,
-    velocity,
+    0.86,
   );
 }
 
@@ -100,14 +104,15 @@ export async function scheduleMidi(
   startTime: number,
   durationSeconds: number,
   velocity: number,
+  masterVolume = 1,
 ): Promise<void> {
   const backend = await ensurePianoEngine();
-  backend.instrument.volume.value = volumeToDb(velocity);
+  backend.instrument.volume.value = volumeToDb(clampVolume(masterVolume));
   backend.instrument.triggerAttackRelease(
     backend.Tone.Frequency(midi, "midi").toNote(),
     Math.max(0.05, durationSeconds),
     startTime,
-    velocity,
+    clampVolume(velocity),
   );
 }
 

@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { OpenSheetMusicDisplay as OSMDInstance } from "opensheetmusicdisplay";
-import type { Hand, PlaybackEvent, ScoreModel } from "../lib/musicxml";
+import type { PlaybackEvent, ScoreModel } from "../lib/musicxml";
 
 type ScoreViewProps = {
   score?: ScoreModel;
   positionBeats: number;
   playbackEvents: PlaybackEvent[];
-  activeNotes: Array<{ midi: number; hand: Hand; pitchName: string }>;
 };
 
 type ColorableGraphicalNote = {
@@ -20,6 +19,10 @@ type ScorePosition = {
 };
 
 function currentMeasure(score: ScoreModel, positionBeats: number): string {
+  if (positionBeats < 0) {
+    return "0";
+  }
+
   const measure = score.measures.findLast((item) => item.startBeat <= positionBeats);
 
   return measure?.number ?? score.measures[0]?.number ?? "1";
@@ -145,12 +148,10 @@ function colorScoreNotes(notes: ColorableGraphicalNote[], color: string): void {
   }
 }
 
-export function ScoreView({ score, positionBeats, playbackEvents, activeNotes }: ScoreViewProps) {
+export function ScoreView({ score, positionBeats, playbackEvents }: ScoreViewProps) {
   const viewRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const osmdRef = useRef<OSMDInstance | null>(null);
-  const targetScrollRef = useRef(0);
-  const animationRef = useRef<number | undefined>(undefined);
   const highlightedNotesRef = useRef<ColorableGraphicalNote[]>([]);
   const highlightedIndexRef = useRef(-1);
   const [error, setError] = useState<string | undefined>();
@@ -215,10 +216,6 @@ export function ScoreView({ score, positionBeats, playbackEvents, activeNotes }:
       colorScoreNotes(highlightedNotesRef.current, "#000000");
       highlightedNotesRef.current = [];
       highlightedIndexRef.current = -1;
-      if (animationRef.current !== undefined) {
-        window.cancelAnimationFrame(animationRef.current);
-        animationRef.current = undefined;
-      }
       osmdRef.current?.clear();
       osmdRef.current = null;
       container.innerHTML = "";
@@ -233,46 +230,26 @@ export function ScoreView({ score, positionBeats, playbackEvents, activeNotes }:
 
     const currentPosition = xForBeat(scorePositions, positionBeats);
     const fallbackX = (positionBeats / score.totalBeats) * view.scrollWidth;
-    targetScrollRef.current = Math.max(
-      0,
-      (currentPosition?.x ?? fallbackX) - view.clientWidth * 0.42,
+    const maxScroll = Math.max(0, view.scrollWidth - view.clientWidth);
+    const targetScroll = Math.min(
+      maxScroll,
+      Math.max(0, (currentPosition?.x ?? fallbackX) - view.clientWidth * 0.42),
     );
+    if (Math.abs(view.scrollLeft - targetScroll) > 0.25) {
+      view.scrollLeft = targetScroll;
+    }
 
-    if (
-      currentPosition &&
-      currentPosition.index !== highlightedIndexRef.current &&
-      scorePositions[currentPosition.index]
-    ) {
+    const nextHighlightIndex = positionBeats < 0 ? -1 : (currentPosition?.index ?? -1);
+    if (nextHighlightIndex !== highlightedIndexRef.current) {
       colorScoreNotes(highlightedNotesRef.current, "#000000");
-      highlightedNotesRef.current = scorePositions[currentPosition.index].notes;
-      highlightedIndexRef.current = currentPosition.index;
-      colorScoreNotes(highlightedNotesRef.current, "#e05842");
-    }
-
-    if (animationRef.current !== undefined) {
-      return;
-    }
-
-    const animate = () => {
-      const currentView = viewRef.current;
-      if (!currentView) {
-        animationRef.current = undefined;
-        return;
+      const nextNotes =
+        nextHighlightIndex >= 0 ? (scorePositions[nextHighlightIndex]?.notes ?? []) : [];
+      highlightedNotesRef.current = nextNotes;
+      highlightedIndexRef.current = nextHighlightIndex;
+      if (nextNotes.length > 0) {
+        colorScoreNotes(nextNotes, "#e05842");
       }
-      const maxScroll = Math.max(0, currentView.scrollWidth - currentView.clientWidth);
-      const target = Math.min(maxScroll, targetScrollRef.current);
-      const delta = target - currentView.scrollLeft;
-      if (Math.abs(delta) < 0.6) {
-        currentView.scrollLeft = target;
-        animationRef.current = undefined;
-        return;
-      }
-
-      currentView.scrollLeft += delta * 0.22;
-      animationRef.current = window.requestAnimationFrame(animate);
-    };
-
-    animationRef.current = window.requestAnimationFrame(animate);
+    }
   }, [positionBeats, renderToken, score, scorePositions]);
 
   if (!score) {
@@ -287,18 +264,6 @@ export function ScoreView({ score, positionBeats, playbackEvents, activeNotes }:
     <div className="score-view">
       <div className="score-playback-line" aria-hidden="true" />
       <div className="score-current-measure">Measure {currentMeasure(score, positionBeats)}</div>
-      {activeNotes.length > 0 ? (
-        <div className="score-active-notes" aria-label="Current score notes">
-          {activeNotes.slice(0, 8).map((note, index) => (
-            <span
-              className={`score-note-chip ${note.hand}`}
-              key={`${note.midi}-${note.hand}-${index}`}
-            >
-              {note.pitchName}
-            </span>
-          ))}
-        </div>
-      ) : null}
       {error ? <div className="score-error">{error}</div> : null}
       <div className="score-scroll" ref={viewRef}>
         <div className="score-canvas" ref={containerRef} />

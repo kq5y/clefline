@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { initialTempo, loopBounds, usePracticeStore } from "../store/practiceStore";
 
-const DISPLAY_FRAME_MS = 25;
+const DISPLAY_FRAME_MS = 16;
 
 export function usePlaybackClock(): void {
   const lastFrame = useRef<number | undefined>(undefined);
@@ -21,8 +21,8 @@ export function usePlaybackClock(): void {
     }
 
     positionRef.current = usePracticeStore.getState().positionBeats;
-    let frameId = 0;
-    const tick = (now: number) => {
+    const tick = () => {
+      const now = window.performance.now();
       const state = usePracticeStore.getState();
       const currentScore = state.score;
       if (!currentScore) {
@@ -57,16 +57,16 @@ export function usePlaybackClock(): void {
 
       if (shouldStop) {
         setPlaying(false);
-        return;
       }
-
-      frameId = window.requestAnimationFrame(tick);
     };
 
-    frameId = window.requestAnimationFrame(tick);
+    tick();
+    const intervalId = window.setInterval(tick, DISPLAY_FRAME_MS);
+    window.addEventListener("visibilitychange", tick);
 
     return () => {
-      window.cancelAnimationFrame(frameId);
+      window.clearInterval(intervalId);
+      window.removeEventListener("visibilitychange", tick);
     };
   }, [isPlaying, score, setPlaying, setPosition]);
 }

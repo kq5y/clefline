@@ -8,7 +8,8 @@ import {
 import { initialTempo, loopBounds, usePracticeStore } from "../store/practiceStore";
 
 const SCHEDULE_INTERVAL_MS = 16;
-const LOOK_AHEAD_SECONDS = 0.1;
+const LOOK_AHEAD_SECONDS = 0.08;
+const HIDDEN_LOOK_AHEAD_SECONDS = 2.2;
 
 function isMeasureStartBeat(beat: number): boolean {
   const { score } = usePracticeStore.getState();
@@ -43,7 +44,7 @@ export function useTonePlayback(): void {
         return;
       }
 
-      if (state.positionBeats < previousPositionRef.current) {
+      if (Math.abs(state.positionBeats - previousPositionRef.current) > 0.35) {
         scheduledRef.current.clear();
       }
       previousPositionRef.current = state.positionBeats;
@@ -54,14 +55,15 @@ export function useTonePlayback(): void {
       const beatRate = (initialTempo(score) / 60) * state.settings.speed;
       const beatSeconds = 1 / beatRate;
       const startBeat = state.positionBeats;
+      const lookAheadSeconds = document.hidden ? HIDDEN_LOOK_AHEAD_SECONDS : LOOK_AHEAD_SECONDS;
       const bounds = loopBounds(score, state.settings);
       const endBeat = Math.min(
         bounds?.endBeat ?? score.totalBeats,
-        startBeat + LOOK_AHEAD_SECONDS * beatRate,
+        startBeat + lookAheadSeconds * beatRate,
       );
 
       if (state.settings.metronomeEnabled) {
-        const firstBeat = Math.max(0, Math.ceil(startBeat - 0.0001));
+        const firstBeat = Math.ceil(startBeat - 0.0001);
         for (let beat = firstBeat; beat < endBeat; beat += 1) {
           const id = `metronome-${beat.toFixed(3)}`;
           if (scheduledRef.current.has(id)) {
@@ -88,7 +90,7 @@ export function useTonePlayback(): void {
         scheduledRef.current.add(event.id);
         const startTime = backend.Tone.now() + (event.absoluteBeat - startBeat) * beatSeconds;
         const duration = Math.max(0.05, event.durationBeats * beatSeconds * 0.92);
-        const velocity = Math.min(1, Math.max(0.05, event.velocity * state.settings.volume));
+        const velocity = Math.min(1, Math.max(0.05, event.velocity));
 
         for (const [index, note] of event.notes.entries()) {
           void scheduleMidi(
@@ -96,6 +98,7 @@ export function useTonePlayback(): void {
             startTime + index * event.rollOffsetBeats * beatSeconds,
             duration,
             velocity,
+            state.settings.volume,
           );
         }
       }

@@ -8,6 +8,8 @@ import {
   Play,
   RotateCcw,
   SlidersHorizontal,
+  SkipBack,
+  SkipForward,
   Upload,
   Waves,
   X,
@@ -44,6 +46,7 @@ export function Controls() {
   const loadSample = usePracticeStore((state) => state.loadSample);
   const togglePlaying = usePracticeStore((state) => state.togglePlaying);
   const reset = usePracticeStore((state) => state.reset);
+  const seekByMeasures = usePracticeStore((state) => state.seekByMeasures);
   const updateSettings = usePracticeStore((state) => state.updateSettings);
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -56,7 +59,9 @@ export function Controls() {
   const activeNotes = activeMidiAt(playbackEvents, positionBeats).length;
   const loop = loopBounds(score, settings);
   const currentMeasure =
-    score?.measures.findLast((measure) => measure.startBeat <= positionBeats)?.number ?? "1";
+    positionBeats < 0
+      ? "0"
+      : (score?.measures.findLast((measure) => measure.startBeat <= positionBeats)?.number ?? "1");
   const onPlayClick = async () => {
     if (isPlaying) {
       togglePlaying();
@@ -98,6 +103,26 @@ export function Controls() {
           </button>
           <button type="button" className="round-button" onClick={reset} disabled={!score}>
             <RotateCcw size={18} />
+          </button>
+          <button
+            type="button"
+            className="round-button"
+            onClick={() => seekByMeasures(-1)}
+            disabled={!score}
+            aria-label="Previous measure"
+            title="Previous measure"
+          >
+            <SkipBack size={17} />
+          </button>
+          <button
+            type="button"
+            className="round-button"
+            onClick={() => seekByMeasures(1)}
+            disabled={!score}
+            aria-label="Next measure"
+            title="Next measure"
+          >
+            <SkipForward size={17} />
           </button>
           <div className="segmented compact" aria-label="View mode">
             <button

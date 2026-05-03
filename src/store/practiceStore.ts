@@ -41,6 +41,7 @@ type PracticeState = {
   setPlaying: (isPlaying: boolean) => void;
   togglePlaying: () => void;
   setPosition: (positionBeats: number) => void;
+  seekByMeasures: (delta: number) => void;
   reset: () => void;
   updateSettings: (patch: Partial<PracticeSettings>) => void;
 };
@@ -86,6 +87,21 @@ export function loopBounds(score: ScoreModel | undefined, settings: PracticeSett
     startBeat: start.startBeat,
     endBeat: end.startBeat + end.durationBeats,
   };
+}
+
+export function leadInBeats(score?: ScoreModel): number {
+  return score ? Math.max(score.measures[0]?.durationBeats ?? 4, 1) : 0;
+}
+
+export function minimumPositionBeats(score?: ScoreModel): number {
+  return score ? -leadInBeats(score) : 0;
+}
+
+function clampPosition(score: ScoreModel | undefined, positionBeats: number): number {
+  const lower = minimumPositionBeats(score);
+  const upper = score?.totalBeats ?? 0;
+
+  return Math.max(lower, Math.min(positionBeats, upper));
 }
 
 export function activeMidiAt(events: PlaybackEvent[], positionBeats: number): number[] {
@@ -150,7 +166,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       isLoading: false,
       loadError: undefined,
       isPlaying: false,
-      positionBeats: 0,
+      positionBeats: minimumPositionBeats(score),
     });
   },
 
@@ -191,13 +207,39 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
 
   setPosition(positionBeats) {
     const score = get().score;
-    const upper = score?.totalBeats ?? 0;
-    set({ positionBeats: Math.max(0, Math.min(positionBeats, upper)) });
+    set({ positionBeats: clampPosition(score, positionBeats) });
+  },
+
+  seekByMeasures(delta) {
+    const score = get().score;
+    if (!score || delta === 0) {
+      return;
+    }
+
+    const currentPosition = get().positionBeats;
+    const lower = minimumPositionBeats(score);
+    if (currentPosition < 0 && delta > 0) {
+      set({ positionBeats: 0 });
+      return;
+    }
+
+    const currentIndex = score.measures.findLastIndex(
+      (measure) => measure.startBeat <= Math.max(0, currentPosition),
+    );
+    const nextIndex = currentIndex + delta;
+    const nextPosition =
+      nextIndex < 0
+        ? lower
+        : score.measures[Math.min(score.measures.length - 1, nextIndex)]?.startBeat;
+    set({ positionBeats: clampPosition(score, nextPosition ?? currentPosition) });
   },
 
   reset() {
     const bounds = loopBounds(get().score, get().settings);
-    set({ positionBeats: bounds?.startBeat ?? 0, isPlaying: false });
+    set({
+      positionBeats: bounds?.startBeat ?? minimumPositionBeats(get().score),
+      isPlaying: false,
+    });
   },
 
   updateSettings(patch) {
@@ -209,7 +251,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
     const positionBeats =
       bounds && (currentPosition < bounds.startBeat || currentPosition > bounds.endBeat)
         ? bounds.startBeat
-        : currentPosition;
+        : clampPosition(score, currentPosition);
 
     set({
       settings: nextSettings,

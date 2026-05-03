@@ -28,4 +28,62 @@ describe("parseMusicXml", () => {
       true,
     );
   });
+
+  it("separates long grace notes and rolls arpeggiated chords", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note>
+        <grace/>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <voice>1</voice>
+        <type>eighth</type>
+        <staff>1</staff>
+      </note>
+      <note>
+        <pitch><step>D</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+        <staff>1</staff>
+      </note>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+        <staff>1</staff>
+        <notations><arpeggiate direction="up"/></notations>
+      </note>
+      <note>
+        <chord/>
+        <pitch><step>E</step><octave>4</octave></pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+        <staff>1</staff>
+      </note>
+    </measure>
+  </part>
+</score-partwise>`;
+    const score = parseMusicXml(xml);
+    const playback = buildPlaybackEvents(score);
+    const grace = playback.find((event) => event.notationLabels.includes("grace"));
+    const arpeggio = playback.find((event) => event.notationLabels.includes("arpeggiate"));
+
+    expect(grace?.absoluteBeat).toBeLessThan(0);
+    expect(grace?.notes).toHaveLength(1);
+    expect(arpeggio?.rollOffsetBeats).toBeGreaterThan(0);
+    expect(arpeggio?.notes.map((note) => note.pitchName)).toEqual(["C4", "E4"]);
+  });
 });

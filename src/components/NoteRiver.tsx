@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import { pianoKeyLayoutForMidi } from "../lib/pianoLayout";
-import type { HandMode } from "../store/practiceStore";
-import type { ScoreModel } from "../lib/musicxml";
+import { minimumPositionBeats, type HandMode } from "../store/practiceStore";
+import type { NoteEvent, ScoreModel } from "../lib/musicxml";
 
 type NoteRiverProps = {
   score?: ScoreModel;
@@ -16,6 +16,12 @@ const BASE_LOOK_AHEAD_BEATS = 4;
 const LOOK_BEHIND_BEATS = 0.5;
 const STRIKE_Y = 100;
 
+type MeasureMarker = {
+  index: number;
+  number: string;
+  startBeat: number;
+};
+
 function includeVisual(handMode: HandMode, hand: string): boolean {
   return handMode === "both" || hand === handMode;
 }
@@ -26,6 +32,26 @@ function yForBeat(beat: number, positionBeats: number, lookAheadBeats: number): 
 
 function clampVisibleY(value: number): number {
   return Math.min(STRIKE_Y, Math.max(-10, value));
+}
+
+function isLongGrace(note: NoteEvent): boolean {
+  return note.notations.some((notation) => notation.type === "grace" && notation.value === "long");
+}
+
+function visualStartBeat(note: NoteEvent): number {
+  if (!note.isGrace) {
+    return note.startBeat;
+  }
+
+  return note.startBeat - (isLongGrace(note) ? 0.32 : 0.14);
+}
+
+function visualDurationBeats(note: NoteEvent): number {
+  if (!note.isGrace) {
+    return note.durationBeats;
+  }
+
+  return isLongGrace(note) ? Math.max(0.24, Math.min(note.durationBeats || 0.28, 0.45)) : 0.14;
 }
 
 export const NoteRiver = memo(function NoteRiver({
@@ -39,28 +65,36 @@ export const NoteRiver = memo(function NoteRiver({
   const lookAheadBeats = BASE_LOOK_AHEAD_BEATS / Math.max(0.5, riverZoom);
   const notes = useMemo(
     () =>
-      score?.notes.filter(
-        (note) =>
-          note.startBeat + note.durationBeats >= positionBeats - LOOK_BEHIND_BEATS &&
-          note.startBeat <= positionBeats + lookAheadBeats,
-      ) ?? [],
+      score?.notes.filter((note) => {
+        const startBeat = visualStartBeat(note);
+
+        return (
+          startBeat + visualDurationBeats(note) >= positionBeats - LOOK_BEHIND_BEATS &&
+          startBeat <= positionBeats + lookAheadBeats
+        );
+      }) ?? [],
     [lookAheadBeats, positionBeats, score],
   );
-  const measureLines = useMemo(
-    () =>
-      score?.measures.filter(
-        (measure) =>
-          measure.startBeat >= positionBeats && measure.startBeat <= positionBeats + lookAheadBeats,
-      ) ?? [],
-    [lookAheadBeats, positionBeats, score],
-  );
+  const measureLines = useMemo<MeasureMarker[]>(() => {
+    if (!score) {
+      return [];
+    }
+
+    return [
+      { index: -1, number: "0", startBeat: minimumPositionBeats(score) },
+      ...score.measures,
+    ].filter(
+      (measure) =>
+        measure.startBeat >= positionBeats && measure.startBeat <= positionBeats + lookAheadBeats,
+    );
+  }, [lookAheadBeats, positionBeats, score]);
   const activeLabels = useMemo(
     () =>
       score?.notes
         .filter(
           (note) =>
-            note.startBeat <= positionBeats &&
-            note.startBeat + Math.max(note.durationBeats, 0.1) > positionBeats &&
+            visualStartBeat(note) <= positionBeats &&
+            visualStartBeat(note) + Math.max(visualDurationBeats(note), 0.1) > positionBeats &&
             includeVisual(handMode, note.hand),
         )
         .slice(0, 12) ?? [],
@@ -85,17 +119,16 @@ export const NoteRiver = memo(function NoteRiver({
               return (
                 <g className="measure-marker" key={measure.index}>
                   <line className="measure-line" x1="0" x2="100" y1={y} y2={y} />
-                  <text className="measure-label" x="1.2" y={Math.min(98, Math.max(3, y - 0.9))}>
-                    {measure.number}
-                  </text>
                 </g>
               );
             })
           : null}
         <line className="strike-line" x1="0" x2="100" y1={STRIKE_Y} y2={STRIKE_Y} />
         {notes.map((note) => {
-          const startY = yForBeat(note.startBeat, positionBeats, lookAheadBeats);
-          const endY = yForBeat(note.startBeat + note.durationBeats, positionBeats, lookAheadBeats);
+          const startBeat = visualStartBeat(note);
+          const durationBeats = visualDurationBeats(note);
+          const startY = yForBeat(startBeat, positionBeats, lookAheadBeats);
+          const endY = yForBeat(startBeat + durationBeats, positionBeats, lookAheadBeats);
           const top = clampVisibleY(Math.min(startY, endY));
           const bottom = Math.min(STRIKE_Y, Math.max(startY, endY));
           const height = Math.max(1.2, bottom - top);
@@ -133,6 +166,23 @@ export const NoteRiver = memo(function NoteRiver({
           );
         })}
       </svg>
+      {showMeasureLines ? (
+        <div className="measure-label-layer" aria-hidden="true">
+          {measureLines.map((measure) => {
+            const y = yForBeat(measure.startBeat, positionBeats, lookAheadBeats);
+
+            return (
+              <span
+                className="measure-label"
+                key={measure.index}
+                style={{ top: `${Math.min(96, Math.max(2, y - 2.2))}%` }}
+              >
+                {measure.number}
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
       {showNoteNames ? (
         <div className="current-readout">
           {activeLabels.map((note) => (

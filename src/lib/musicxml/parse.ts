@@ -141,6 +141,22 @@ function parseNotations(note: Element): {
         continue;
       }
 
+      if (notation.tagName === "technical") {
+        for (const child of elements(notation)) {
+          if (child.tagName !== "arpeggiate" && child.tagName !== "non-arpeggiate") {
+            continue;
+          }
+
+          notations.push({
+            type: child.tagName,
+            placement: attr(child, "placement"),
+            value: attr(child, "direction") ?? attr(child, "type"),
+            number: attr(child, "number"),
+          });
+        }
+        continue;
+      }
+
       if (notation.tagName === "slur" || notation.tagName === "glissando") {
         notations.push({
           type: notation.tagName,
@@ -154,7 +170,11 @@ function parseNotations(note: Element): {
       if (notation.tagName === "arpeggiate" || notation.tagName === "fermata") {
         notations.push({
           type: notation.tagName,
-          value: attr(notation, "type") ?? notation.textContent?.trim() ?? undefined,
+          value:
+            attr(notation, "direction") ??
+            attr(notation, "type") ??
+            notation.textContent?.trim() ??
+            undefined,
           number: attr(notation, "number"),
         });
       }

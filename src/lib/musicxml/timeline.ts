@@ -122,7 +122,7 @@ function performanceVelocity(score: ScoreModel, notes: NoteEvent[]): number {
     scale *= 1.22;
   }
   if (notes.some((note) => note.isGrace)) {
-    scale *= 0.62;
+    scale *= hasLongGrace(notes) ? 0.82 : 0.58;
   }
 
   return clamp(baseVelocity * scale, 0.08, 1);
@@ -135,7 +135,9 @@ function hasNotation(notes: NoteEvent[], type: string): boolean {
 function performanceDuration(notes: NoteEvent[]): number {
   const durationBeats = Math.max(...notes.map((note) => note.durationBeats));
   if (notes.some((note) => note.isGrace)) {
-    return Math.min(durationBeats, 0.18);
+    return hasLongGrace(notes)
+      ? clamp(durationBeats || 0.28, 0.24, 0.45)
+      : Math.min(durationBeats || 0.14, 0.14);
   }
   if (hasNotation(notes, "staccatissimo")) {
     return durationBeats * 0.32;
@@ -150,42 +152,86 @@ function performanceDuration(notes: NoteEvent[]): number {
   return durationBeats;
 }
 
+function hasLongGrace(notes: NoteEvent[]): boolean {
+  return notes.some((note) =>
+    note.notations.some((notation) => notation.type === "grace" && notation.value === "long"),
+  );
+}
+
+function graceLeadInBeats(notes: NoteEvent[]): number {
+  if (!notes.some((note) => note.isGrace)) {
+    return 0;
+  }
+
+  return hasLongGrace(notes) ? 0.32 : 0.14;
+}
+
+function beatKey(beat: number): string {
+  return beat.toFixed(5);
+}
+
+function isArpeggioNote(note: NoteEvent): boolean {
+  return note.notations.some((notation) => notation.type === "arpeggiate");
+}
+
+function arpeggioDirection(notes: NoteEvent[]): "up" | "down" {
+  return notes.some((note) =>
+    note.notations.some((notation) => notation.type === "arpeggiate" && notation.value === "down"),
+  )
+    ? "down"
+    : "up";
+}
+
 export function buildPlaybackEvents(
   score: ScoreModel,
   options: TimelineOptions = {},
 ): PlaybackEvent[] {
   const grouped = new Map<string, NoteEvent[]>();
+  const arpeggioBeats = new Set(
+    score.notes.filter(isArpeggioNote).map((note) => beatKey(note.startBeat)),
+  );
 
   for (const note of score.notes) {
     if (!includeHand(note, options.handMode) || note.tieStop) {
       continue;
     }
 
-    const key = `${note.startBeat.toFixed(5)}:${note.staff}:${note.voice}`;
+    const startKey = beatKey(note.startBeat);
+    const graceKey = note.isGrace
+      ? `grace:${note.notations.find((notation) => notation.type === "grace")?.value ?? "short"}`
+      : "main";
+    const key =
+      arpeggioBeats.has(startKey) && !note.isGrace
+        ? `${startKey}:arpeggio`
+        : `${startKey}:${note.staff}:${note.voice}:${graceKey}`;
     grouped.set(key, [...(grouped.get(key) ?? []), note]);
   }
 
   return Array.from(grouped.values())
     .map((notes, index) => {
-      const first = notes[0];
-      const arpeggio = notes.some((note) =>
-        note.notations.some((notation) => notation.type === "arpeggiate"),
-      );
+      const arpeggio = notes.some(isArpeggioNote);
+      const orderedNotes = arpeggio
+        ? notes.toSorted((a, b) =>
+            arpeggioDirection(notes) === "down" ? b.midi - a.midi : a.midi - b.midi,
+          )
+        : notes;
+      const first = orderedNotes[0];
       const hand: Hand = notes.every((note) => note.hand === first.hand) ? first.hand : "unknown";
+      const sourceStartBeat = Math.min(...orderedNotes.map((note) => note.startBeat));
 
       return {
         id: `playback-${index}`,
-        absoluteBeat: first.startBeat,
-        sourceStartBeat: first.startBeat,
-        durationBeats: performanceDuration(notes),
-        noteEventIds: notes.map((note) => note.id),
-        notes,
+        absoluteBeat: sourceStartBeat - graceLeadInBeats(orderedNotes),
+        sourceStartBeat,
+        durationBeats: performanceDuration(orderedNotes),
+        noteEventIds: orderedNotes.map((note) => note.id),
+        notes: orderedNotes,
         measureNumber: first.measureNumber,
         staff: first.staff,
         hand,
-        velocity: performanceVelocity(score, notes),
-        rollOffsetBeats: arpeggio ? 0.04 : 0,
-        notationLabels: notationLabels(notes),
+        velocity: performanceVelocity(score, orderedNotes),
+        rollOffsetBeats: arpeggio ? 0.055 : 0,
+        notationLabels: notationLabels(orderedNotes),
       };
     })
     .toSorted((a, b) => a.absoluteBeat - b.absoluteBeat || a.notes[0].midi - b.notes[0].midi);

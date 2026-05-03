@@ -68,6 +68,13 @@ function activeEvents(playbackEvents: PlaybackEvent[], positionBeats: number): P
   return active;
 }
 
+function latestEvent(
+  playbackEvents: PlaybackEvent[],
+  positionBeats: number,
+): PlaybackEvent | undefined {
+  return playbackEvents.findLast((event) => event.absoluteBeat <= positionBeats);
+}
+
 export const PlaybackMetadata = memo(function PlaybackMetadata({
   score,
   playbackEvents,
@@ -79,22 +86,36 @@ export const PlaybackMetadata = memo(function PlaybackMetadata({
     }
 
     const events = activeEvents(playbackEvents, positionBeats);
+    const eventForDisplay = events.length > 0 ? events : latestEvent(playbackEvents, positionBeats);
+    const displayEvents = Array.isArray(eventForDisplay)
+      ? eventForDisplay
+      : eventForDisplay
+        ? [eventForDisplay]
+        : [];
     const labels = Array.from(
       new Set(
-        events.flatMap((event) => event.notationLabels).map((label) => ARTICULATION_LABELS[label]),
+        displayEvents
+          .flatMap((event) => event.notationLabels)
+          .map((label) => ARTICULATION_LABELS[label]),
       ),
     ).filter(Boolean);
     const velocity =
-      events.length > 0
-        ? Math.round((events.reduce((sum, event) => sum + event.velocity, 0) / events.length) * 100)
+      displayEvents.length > 0
+        ? Math.round(
+            (displayEvents.reduce((sum, event) => sum + event.velocity, 0) / displayEvents.length) *
+              100,
+          )
         : undefined;
-    const measure = score.measures.findLast((item) => item.startBeat <= positionBeats);
+    const measure =
+      positionBeats < 0
+        ? undefined
+        : score.measures.findLast((item) => item.startBeat <= positionBeats);
 
     return {
-      measure: measure?.number ?? "1",
+      measure: positionBeats < 0 ? "0" : (measure?.number ?? "1"),
       dynamic: currentDynamic(score, positionBeats),
-      expression: currentExpression(score, positionBeats),
-      labels,
+      expression: currentExpression(score, positionBeats) ?? "-",
+      labels: labels.length > 0 ? labels.slice(0, 3).join(", ") : "-",
       tempo: Math.round(initialTempo(score)),
       velocity,
     };
@@ -109,11 +130,9 @@ export const PlaybackMetadata = memo(function PlaybackMetadata({
       <span>M {meta.measure}</span>
       <span>{meta.tempo} BPM</span>
       <span>Dyn {meta.dynamic}</span>
-      {meta.expression ? <span>{meta.expression}</span> : null}
-      {meta.velocity ? <span>Vel {meta.velocity}%</span> : null}
-      {meta.labels.slice(0, 3).map((label) => (
-        <span key={label}>{label}</span>
-      ))}
+      <span>Expr {meta.expression}</span>
+      <span>Vel {meta.velocity === undefined ? "-" : `${meta.velocity}%`}</span>
+      <span>Art {meta.labels}</span>
     </div>
   );
 });
