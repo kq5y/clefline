@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { OpenSheetMusicDisplay as OSMDInstance } from "opensheetmusicdisplay";
 import type { Hand, PlaybackEvent, ScoreModel } from "../lib/musicxml";
 
@@ -7,6 +7,16 @@ type ScoreViewProps = {
   positionBeats: number;
   playbackEvents: PlaybackEvent[];
   activeNotes: Array<{ midi: number; hand: Hand; pitchName: string }>;
+};
+
+type ColorableGraphicalNote = {
+  setColor: (color: string, options: Record<string, boolean>) => void;
+};
+
+type ScorePosition = {
+  beat: number;
+  x: number;
+  notes: ColorableGraphicalNote[];
 };
 
 function currentMeasure(score: ScoreModel, positionBeats: number): string {
@@ -21,34 +31,7 @@ function uniqueEventStarts(playbackEvents: PlaybackEvent[]): number[] {
     .toSorted((a, b) => a - b);
 }
 
-function cursorStepAt(starts: number[], positionBeats: number): number {
-  const index = starts.findLastIndex((beat) => beat <= positionBeats);
-
-  return Math.max(0, index);
-}
-
-function moveCursors(osmd: OSMDInstance, cursorStepRef: MutableRefObject<number>, step: number) {
-  const cursors = osmd.cursors.length > 0 ? osmd.cursors : [osmd.cursor];
-  if (step < cursorStepRef.current) {
-    for (const cursor of cursors) {
-      cursor.reset();
-    }
-    cursorStepRef.current = 0;
-  }
-
-  while (cursorStepRef.current < step) {
-    for (const cursor of cursors) {
-      cursor.next();
-    }
-    cursorStepRef.current += 1;
-  }
-
-  for (const cursor of cursors) {
-    cursor.show();
-  }
-}
-
-function followCursorElement(view: HTMLDivElement): void {
+function visibleCursorElement(view: HTMLDivElement): HTMLElement | undefined {
   const cursor =
     (Array.from(view.querySelectorAll("img[id*=cursor]")) as HTMLElement[]).find((element) => {
       const style = window.getComputedStyle(element);
@@ -61,35 +44,119 @@ function followCursorElement(view: HTMLDivElement): void {
         box.width > 0 &&
         box.height > 0
       );
-    }) ?? null;
+    }) ?? undefined;
+
+  return cursor;
+}
+
+function cursorXInScroll(view: HTMLDivElement): number | undefined {
+  const cursor = visibleCursorElement(view);
   if (!cursor) {
-    return;
+    return undefined;
   }
 
   const cursorBox = cursor.getBoundingClientRect();
   const viewBox = view.getBoundingClientRect();
-  const targetLeft = viewBox.left + view.clientWidth * 0.42;
-  const delta = cursorBox.left - targetLeft;
-  if (Math.abs(delta) < 2) {
-    return;
+
+  return cursorBox.left - viewBox.left + view.scrollLeft;
+}
+
+function buildScorePositions(
+  osmd: OSMDInstance,
+  view: HTMLDivElement,
+  starts: number[],
+): ScorePosition[] {
+  const cursors = osmd.cursors.length > 0 ? osmd.cursors : [osmd.cursor];
+  const positions: ScorePosition[] = [];
+  view.scrollLeft = 0;
+  for (const cursor of cursors) {
+    cursor.reset();
+    cursor.show();
   }
 
-  view.scrollTo({
-    left: Math.max(0, view.scrollLeft + delta),
-    top: 0,
-    behavior: "smooth",
-  });
+  for (const beat of starts) {
+    const x = cursorXInScroll(view);
+    if (x !== undefined) {
+      const notes = Array.from(
+        new Set(
+          cursors.flatMap((cursor) => cursor.GNotesUnderCursor() as ColorableGraphicalNote[]),
+        ),
+      );
+      positions.push({ beat, x, notes });
+    }
+    for (const cursor of cursors) {
+      cursor.next();
+    }
+  }
+
+  for (const cursor of cursors) {
+    cursor.hide();
+  }
+
+  return positions;
+}
+
+function positionIndexForBeat(positions: ScorePosition[], positionBeats: number): number {
+  return positions.findLastIndex((position) => position.beat <= positionBeats);
+}
+
+function xForBeat(
+  positions: ScorePosition[],
+  positionBeats: number,
+): { index: number; x: number } | undefined {
+  if (positions.length === 0) {
+    return undefined;
+  }
+
+  const index = positionIndexForBeat(positions, positionBeats);
+  if (index < 0) {
+    return { index: 0, x: positions[0].x };
+  }
+  const current = positions[index];
+  const next = positions[index + 1];
+  if (!next) {
+    return { index, x: current.x };
+  }
+
+  const progress = Math.min(
+    1,
+    Math.max(0, (positionBeats - current.beat) / Math.max(0.001, next.beat - current.beat)),
+  );
+
+  return { index, x: current.x + (next.x - current.x) * progress };
+}
+
+function colorScoreNotes(notes: ColorableGraphicalNote[], color: string): void {
+  const options = {
+    applyToBeams: true,
+    applyToFlag: true,
+    applyToLedgerLines: true,
+    applyToModifiers: false,
+    applyToNoteheads: true,
+    applyToStem: true,
+  };
+
+  for (const note of notes) {
+    try {
+      note.setColor(color, options);
+    } catch {
+      // OSMD can invalidate graphical note references during teardown.
+    }
+  }
 }
 
 export function ScoreView({ score, positionBeats, playbackEvents, activeNotes }: ScoreViewProps) {
   const viewRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const osmdRef = useRef<OSMDInstance | null>(null);
-  const cursorStepRef = useRef(0);
+  const targetScrollRef = useRef(0);
+  const animationRef = useRef<number | undefined>(undefined);
+  const highlightedNotesRef = useRef<ColorableGraphicalNote[]>([]);
+  const highlightedIndexRef = useRef(-1);
   const [error, setError] = useState<string | undefined>();
   const [renderToken, setRenderToken] = useState(0);
+  const [scorePositions, setScorePositions] = useState<ScorePosition[]>([]);
   const starts = useMemo(() => uniqueEventStarts(playbackEvents), [playbackEvents]);
-  const cursorStep = cursorStepAt(starts, positionBeats);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -100,7 +167,7 @@ export function ScoreView({ score, positionBeats, playbackEvents, activeNotes }:
     let cancelled = false;
     container.innerHTML = "";
     osmdRef.current = null;
-    cursorStepRef.current = 0;
+    setScorePositions([]);
     setError(undefined);
 
     void import("opensheetmusicdisplay")
@@ -131,6 +198,11 @@ export function ScoreView({ score, positionBeats, playbackEvents, activeNotes }:
             cursor.show();
           }
           osmdRef.current = osmd;
+          window.requestAnimationFrame(() => {
+            if (!cancelled && viewRef.current) {
+              setScorePositions(buildScorePositions(osmd, viewRef.current, starts));
+            }
+          });
           setRenderToken((value) => value + 1);
         }
       })
@@ -140,22 +212,68 @@ export function ScoreView({ score, positionBeats, playbackEvents, activeNotes }:
 
     return () => {
       cancelled = true;
+      colorScoreNotes(highlightedNotesRef.current, "#000000");
+      highlightedNotesRef.current = [];
+      highlightedIndexRef.current = -1;
+      if (animationRef.current !== undefined) {
+        window.cancelAnimationFrame(animationRef.current);
+        animationRef.current = undefined;
+      }
       osmdRef.current?.clear();
       osmdRef.current = null;
       container.innerHTML = "";
     };
-  }, [score]);
+  }, [score, starts]);
 
   useEffect(() => {
-    if (!osmdRef.current) {
+    const view = viewRef.current;
+    if (!view || !score || score.totalBeats <= 0) {
       return;
     }
 
-    moveCursors(osmdRef.current, cursorStepRef, cursorStep);
-    if (viewRef.current) {
-      followCursorElement(viewRef.current);
+    const currentPosition = xForBeat(scorePositions, positionBeats);
+    const fallbackX = (positionBeats / score.totalBeats) * view.scrollWidth;
+    targetScrollRef.current = Math.max(
+      0,
+      (currentPosition?.x ?? fallbackX) - view.clientWidth * 0.42,
+    );
+
+    if (
+      currentPosition &&
+      currentPosition.index !== highlightedIndexRef.current &&
+      scorePositions[currentPosition.index]
+    ) {
+      colorScoreNotes(highlightedNotesRef.current, "#000000");
+      highlightedNotesRef.current = scorePositions[currentPosition.index].notes;
+      highlightedIndexRef.current = currentPosition.index;
+      colorScoreNotes(highlightedNotesRef.current, "#e05842");
     }
-  }, [cursorStep, renderToken]);
+
+    if (animationRef.current !== undefined) {
+      return;
+    }
+
+    const animate = () => {
+      const currentView = viewRef.current;
+      if (!currentView) {
+        animationRef.current = undefined;
+        return;
+      }
+      const maxScroll = Math.max(0, currentView.scrollWidth - currentView.clientWidth);
+      const target = Math.min(maxScroll, targetScrollRef.current);
+      const delta = target - currentView.scrollLeft;
+      if (Math.abs(delta) < 0.6) {
+        currentView.scrollLeft = target;
+        animationRef.current = undefined;
+        return;
+      }
+
+      currentView.scrollLeft += delta * 0.22;
+      animationRef.current = window.requestAnimationFrame(animate);
+    };
+
+    animationRef.current = window.requestAnimationFrame(animate);
+  }, [positionBeats, renderToken, score, scorePositions]);
 
   if (!score) {
     return (
@@ -167,6 +285,7 @@ export function ScoreView({ score, positionBeats, playbackEvents, activeNotes }:
 
   return (
     <div className="score-view">
+      <div className="score-playback-line" aria-hidden="true" />
       <div className="score-current-measure">Measure {currentMeasure(score, positionBeats)}</div>
       {activeNotes.length > 0 ? (
         <div className="score-active-notes" aria-label="Current score notes">

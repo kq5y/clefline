@@ -22,6 +22,7 @@ export type PracticeSettings = {
   loopEndMeasure?: string;
   handMode: HandMode;
   volume: number;
+  metronomeEnabled: boolean;
   showNoteNames: boolean;
 };
 
@@ -52,6 +53,7 @@ const DEFAULT_SETTINGS: PracticeSettings = {
   loopEnabled: false,
   handMode: "both",
   volume: 0.75,
+  metronomeEnabled: false,
   showNoteNames: true,
 };
 

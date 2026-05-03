@@ -12,7 +12,7 @@ type NoteRiverProps = {
   showNoteNames: boolean;
 };
 
-const BASE_LOOK_AHEAD_BEATS = 8;
+const BASE_LOOK_AHEAD_BEATS = 4;
 const LOOK_BEHIND_BEATS = 0.5;
 const STRIKE_Y = 100;
 
@@ -114,6 +114,13 @@ export const NoteRiver = memo(function NoteRiver({
                 width={layout.noteWidthPercent}
                 height={height}
                 rx={layout.black ? "0.16" : "0.22"}
+              />
+              <line
+                className="note-release"
+                x1={x}
+                x2={x + layout.noteWidthPercent}
+                y1={top}
+                y2={top}
               />
               <line
                 className="note-attack"

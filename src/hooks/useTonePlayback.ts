@@ -1,9 +1,21 @@
 import { useEffect, useRef } from "react";
-import { ensurePianoEngine, releaseAllPianoKeys, scheduleMidi } from "../lib/audio/pianoEngine";
+import {
+  ensurePianoEngine,
+  releaseAllPianoKeys,
+  scheduleMetronomeClick,
+  scheduleMidi,
+} from "../lib/audio/pianoEngine";
 import { initialTempo, loopBounds, usePracticeStore } from "../store/practiceStore";
 
-const SCHEDULE_INTERVAL_MS = 25;
-const LOOK_AHEAD_SECONDS = 0.32;
+const SCHEDULE_INTERVAL_MS = 16;
+const LOOK_AHEAD_SECONDS = 0.1;
+
+function isMeasureStartBeat(beat: number): boolean {
+  const { score } = usePracticeStore.getState();
+  const measure = score?.measures.findLast((item) => item.startBeat <= beat);
+
+  return measure ? Math.abs(beat - measure.startBeat) < 0.001 : Math.abs(beat) < 0.001;
+}
 
 export function useTonePlayback(): void {
   const scheduledRef = useRef<Set<string>>(new Set());
@@ -47,6 +59,24 @@ export function useTonePlayback(): void {
         bounds?.endBeat ?? score.totalBeats,
         startBeat + LOOK_AHEAD_SECONDS * beatRate,
       );
+
+      if (state.settings.metronomeEnabled) {
+        const firstBeat = Math.max(0, Math.ceil(startBeat - 0.0001));
+        for (let beat = firstBeat; beat < endBeat; beat += 1) {
+          const id = `metronome-${beat.toFixed(3)}`;
+          if (scheduledRef.current.has(id)) {
+            continue;
+          }
+          scheduledRef.current.add(id);
+          const startTime = backend.Tone.now() + (beat - startBeat) * beatSeconds;
+          const accented = isMeasureStartBeat(beat);
+          void scheduleMetronomeClick(
+            startTime,
+            accented,
+            state.settings.volume * (accented ? 0.62 : 0.42),
+          );
+        }
+      }
 
       for (const event of state.playbackEvents) {
         if (event.absoluteBeat < startBeat || event.absoluteBeat >= endBeat) {

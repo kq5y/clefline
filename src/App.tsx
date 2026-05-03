@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { Controls } from "./components/Controls";
 import { NoteRiver } from "./components/NoteRiver";
 import { PianoKeyboard } from "./components/PianoKeyboard";
+import { PlaybackMetadata } from "./components/PlaybackMetadata";
 import { ScoreView } from "./components/ScoreView";
 import { usePlaybackClock } from "./hooks/usePlaybackClock";
 import { useTonePlayback } from "./hooks/useTonePlayback";
@@ -84,6 +85,11 @@ function App() {
         <div className="progress-track">
           <div style={{ width: `${progress}%` }} />
         </div>
+        <PlaybackMetadata
+          score={score}
+          playbackEvents={playbackEvents}
+          positionBeats={positionBeats}
+        />
         {settings.viewMode === "river" ? (
           <NoteRiver
             score={score}

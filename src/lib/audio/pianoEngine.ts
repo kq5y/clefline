@@ -18,9 +18,21 @@ type SamplerInstrument = {
   volume: { value: number };
 };
 
+type ClickInstrument = {
+  triggerAttackRelease: (
+    note: string,
+    duration: number | string,
+    time?: number,
+    velocity?: number,
+  ) => void;
+  triggerRelease?: (time?: number) => void;
+  volume: { value: number };
+};
+
 type AudioBackend = {
   Tone: typeof import("tone");
   instrument: SamplerInstrument;
+  metronome: ClickInstrument;
 };
 
 let backendPromise: Promise<AudioBackend> | undefined;
@@ -51,10 +63,22 @@ export async function ensurePianoEngine(): Promise<AudioBackend> {
       release: 0.8,
       volume: -4,
     }).toDestination() as SamplerInstrument;
+    const metronome = new Tone.MembraneSynth({
+      pitchDecay: 0.01,
+      octaves: 2.8,
+      oscillator: { type: "square" },
+      envelope: {
+        attack: 0.001,
+        decay: 0.045,
+        sustain: 0,
+        release: 0.02,
+      },
+      volume: -12,
+    }).toDestination() as ClickInstrument;
 
     await Tone.loaded();
 
-    return { Tone, instrument };
+    return { Tone, instrument, metronome };
   })();
 
   return backendPromise;
@@ -87,7 +111,18 @@ export async function scheduleMidi(
   );
 }
 
+export async function scheduleMetronomeClick(
+  startTime: number,
+  accented: boolean,
+  volume: number,
+): Promise<void> {
+  const backend = await ensurePianoEngine();
+  backend.metronome.volume.value = volumeToDb(Math.max(0.01, volume));
+  backend.metronome.triggerAttackRelease(accented ? "C6" : "C5", 0.045, startTime, volume);
+}
+
 export async function releaseAllPianoKeys(): Promise<void> {
   const backend = await ensurePianoEngine();
   backend.instrument.releaseAll(backend.Tone.now());
+  backend.metronome.triggerRelease?.(backend.Tone.now());
 }

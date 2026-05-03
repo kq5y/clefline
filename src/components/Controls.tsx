@@ -233,6 +233,14 @@ export function Controls() {
               />
               Loop
             </label>
+            <label className="toggle-control">
+              <input
+                type="checkbox"
+                checked={settings.metronomeEnabled}
+                onChange={(event) => updateSettings({ metronomeEnabled: event.target.checked })}
+              />
+              Metronome
+            </label>
             <div className="range-row">
               <label className="select-control">
                 A

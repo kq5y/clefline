@@ -19,24 +19,7 @@ test("loads the public sample and switches between river and score views", async
   await page.getByRole("button", { name: "Score" }).click();
   await expect(page.locator(".score-view")).toBeVisible();
   await expect(page.locator(".score-canvas svg").first()).toBeVisible({ timeout: 15_000 });
-  await expect
-    .poll(() =>
-      page.locator(".score-scroll img[id*=cursor]").evaluateAll((cursors) =>
-        cursors.some((cursor) => {
-          const style = window.getComputedStyle(cursor);
-          const box = cursor.getBoundingClientRect();
-
-          return (
-            style.display !== "none" &&
-            style.visibility !== "hidden" &&
-            Number(style.opacity) > 0 &&
-            box.width > 0 &&
-            box.height > 0
-          );
-        }),
-      ),
-    )
-    .toBe(true);
+  await expect(page.locator(".score-playback-line")).toBeVisible();
 
   await page.getByRole("button", { name: "River" }).click();
   await expect(page.getByLabel("Falling notes")).toBeVisible();
