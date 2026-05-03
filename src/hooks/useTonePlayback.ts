@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import {
   ensurePianoEngine,
   releaseAllPianoKeys,
-  scheduleMetronomeClick,
-  scheduleMidi,
+  scheduleMetronomeClickOnBackend,
+  scheduleMidiOnBackend,
 } from "../lib/audio/pianoEngine";
 import { buildMetronomeClicks } from "../lib/musicxml";
 import {
@@ -18,8 +18,10 @@ import {
 import type { PlaybackEvent, ScoreModel } from "../lib/musicxml";
 
 const SCHEDULE_INTERVAL_MS = 25;
-const LOOK_AHEAD_SECONDS = 0.2;
+const LOOK_AHEAD_SECONDS = 0.36;
 const HIDDEN_LOOK_AHEAD_SECONDS = 2.2;
+const LATE_EVENT_CATCHUP_SECONDS = 0.6;
+const MIN_SCHEDULE_DELAY_SECONDS = 0.004;
 const metronomeClickCache = new WeakMap<ScoreModel, ReturnType<typeof buildMetronomeClicks>>();
 
 function firstEventIndexAtOrAfter(events: { absoluteBeat: number }[], beat: number): number {
@@ -103,12 +105,68 @@ function playbackBeatAfterSeconds(
   return Math.min(cursor, endLimit);
 }
 
+function playbackBeatBeforeSeconds(
+  score: ScoreModel,
+  events: PlaybackEvent[],
+  fromBeat: number,
+  seconds: number,
+  speed: number,
+): number {
+  let remainingSeconds = seconds;
+  let cursor = fromBeat;
+
+  while (remainingSeconds > 0 && cursor > 0.0001) {
+    const tempo = tempoAtSourceBeat(score, sourceBeatAt(events, cursor));
+    const beatRate = beatRateForTempo(tempo, speed);
+    const maxStepBeats = Math.min(0.25, cursor);
+    const maxStepSeconds = maxStepBeats / beatRate;
+    if (remainingSeconds <= maxStepSeconds) {
+      return Math.max(0, cursor - remainingSeconds * beatRate);
+    }
+
+    remainingSeconds -= maxStepSeconds;
+    cursor -= maxStepBeats;
+  }
+
+  return Math.max(0, cursor);
+}
+
+export function audioScheduleStartTime(
+  now: number,
+  score: ScoreModel,
+  events: PlaybackEvent[],
+  startBeat: number,
+  targetBeat: number,
+  settings: PracticeSettings,
+): number {
+  if (targetBeat <= startBeat) {
+    return now + MIN_SCHEDULE_DELAY_SECONDS;
+  }
+
+  return now + secondsBetweenPlaybackBeats(score, events, startBeat, targetBeat, settings.speed);
+}
+
 export function audioScheduleEndBeat(
   score: ScoreModel,
   events: PlaybackEvent[],
   settings: PracticeSettings,
 ): number {
   return loopBounds(score, settings)?.endBeat ?? playbackEndBeat(score, events);
+}
+
+export function audioScheduleCatchupStartBeat(
+  score: ScoreModel,
+  events: PlaybackEvent[],
+  startBeat: number,
+  settings: PracticeSettings,
+): number {
+  return playbackBeatBeforeSeconds(
+    score,
+    events,
+    startBeat,
+    LATE_EVENT_CATCHUP_SECONDS,
+    settings.speed,
+  );
 }
 
 export function useTonePlayback(): void {
@@ -187,8 +245,15 @@ export function useTonePlayback(): void {
         if (cancelled) return;
 
         const startBeat = state.positionBeats;
+        const toneNow = backend.Tone.now();
         const lookAheadSeconds = document.hidden ? HIDDEN_LOOK_AHEAD_SECONDS : LOOK_AHEAD_SECONDS;
         const endLimit = audioScheduleEndBeat(score, state.playbackEvents, state.settings);
+        const catchupStartBeat = audioScheduleCatchupStartBeat(
+          score,
+          state.playbackEvents,
+          startBeat,
+          state.settings,
+        );
         const endBeat = playbackBeatAfterSeconds(
           score,
           state.playbackEvents,
@@ -200,7 +265,7 @@ export function useTonePlayback(): void {
 
         if (state.settings.metronomeEnabled) {
           const clicks = metronomeClicksFor(score);
-          const firstClickIndex = firstEventIndexAtOrAfter(clicks, startBeat - 0.001);
+          const firstClickIndex = firstEventIndexAtOrAfter(clicks, catchupStartBeat - 0.001);
           for (let index = firstClickIndex; index < clicks.length; index += 1) {
             const click = clicks[index];
             if (click.absoluteBeat >= endBeat) {
@@ -212,16 +277,16 @@ export function useTonePlayback(): void {
               continue;
             }
             scheduledRef.current.add(id);
-            const startTime =
-              backend.Tone.now() +
-              secondsBetweenPlaybackBeats(
-                score,
-                state.playbackEvents,
-                startBeat,
-                click.absoluteBeat,
-                state.settings.speed,
-              );
-            void scheduleMetronomeClick(
+            const startTime = audioScheduleStartTime(
+              toneNow,
+              score,
+              state.playbackEvents,
+              startBeat,
+              click.absoluteBeat,
+              state.settings,
+            );
+            scheduleMetronomeClickOnBackend(
+              backend,
               startTime,
               click.accented,
               state.settings.volume * (click.accented ? 0.68 : 0.44),
@@ -232,7 +297,7 @@ export function useTonePlayback(): void {
         const events = state.playbackEvents;
         while (
           eventCursorRef.current < events.length &&
-          events[eventCursorRef.current].absoluteBeat < startBeat - 0.001
+          events[eventCursorRef.current].absoluteBeat < catchupStartBeat - 0.001
         ) {
           eventCursorRef.current += 1;
         }
@@ -248,15 +313,14 @@ export function useTonePlayback(): void {
           }
           scheduledRef.current.add(event.id);
           eventCursorRef.current = index + 1;
-          const startTime =
-            backend.Tone.now() +
-            secondsBetweenPlaybackBeats(
-              score,
-              state.playbackEvents,
-              startBeat,
-              event.absoluteBeat,
-              state.settings.speed,
-            );
+          const startTime = audioScheduleStartTime(
+            toneNow,
+            score,
+            state.playbackEvents,
+            startBeat,
+            event.absoluteBeat,
+            state.settings,
+          );
           const eventSeconds = secondsBetweenPlaybackBeats(
             score,
             state.playbackEvents,
@@ -275,7 +339,8 @@ export function useTonePlayback(): void {
           const velocity = Math.min(1, Math.max(0.05, event.velocity));
 
           for (const [noteIndex, note] of event.notes.entries()) {
-            void scheduleMidi(
+            scheduleMidiOnBackend(
+              backend,
               note.midi,
               startTime + noteIndex * rollOffsetSeconds,
               duration,

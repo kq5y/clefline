@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { buildPlaybackEvents, parseMusicXml } from "../lib/musicxml";
 import { playbackEndBeat, type PracticeSettings } from "../store/practiceStore";
-import { audioScheduleEndBeat } from "./useTonePlayback";
+import {
+  audioScheduleCatchupStartBeat,
+  audioScheduleEndBeat,
+  audioScheduleStartTime,
+} from "./useTonePlayback";
 
 const DEFAULT_TEST_SETTINGS: PracticeSettings = {
   viewMode: "river",
@@ -14,6 +18,58 @@ const DEFAULT_TEST_SETTINGS: PracticeSettings = {
   metronomeEnabled: false,
   showNoteNames: true,
 };
+
+const SIMPLE_SCORE_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+describe("audio scheduler timing", () => {
+  it("keeps a short late window so overdue notes are not skipped", () => {
+    const score = parseMusicXml(SIMPLE_SCORE_XML);
+    const events = buildPlaybackEvents(score);
+
+    expect(audioScheduleCatchupStartBeat(score, events, 2, DEFAULT_TEST_SETTINGS)).toBeCloseTo(
+      0.8,
+      3,
+    );
+  });
+
+  it("schedules overdue notes just ahead of the current audio time", () => {
+    const score = parseMusicXml(SIMPLE_SCORE_XML);
+    const events = buildPlaybackEvents(score);
+
+    expect(audioScheduleStartTime(10, score, events, 2, 1.9, DEFAULT_TEST_SETTINGS)).toBeCloseTo(
+      10.004,
+      3,
+    );
+  });
+
+  it("uses the same audio-time origin for future notes in a scheduling pass", () => {
+    const score = parseMusicXml(SIMPLE_SCORE_XML);
+    const events = buildPlaybackEvents(score);
+
+    expect(audioScheduleStartTime(10, score, events, 2, 3, DEFAULT_TEST_SETTINGS)).toBeCloseTo(
+      10.5,
+      3,
+    );
+  });
+});
 
 describe("audioScheduleEndBeat", () => {
   it("uses the expanded playback end instead of the raw score end", () => {

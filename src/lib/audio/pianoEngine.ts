@@ -35,6 +35,8 @@ type AudioBackend = {
   metronome: ClickInstrument;
 };
 
+export type PianoAudioBackend = AudioBackend;
+
 let backendPromise: Promise<AudioBackend> | undefined;
 
 function volumeToDb(volume: number): number {
@@ -100,12 +102,23 @@ export async function ensurePianoEngine(): Promise<AudioBackend> {
 
 export async function playMidiOnce(midi: number, volume: number, seconds = 0.7): Promise<void> {
   const backend = await ensurePianoEngine();
-  backend.instrument.volume.value = volumeToDb(clampVolume(volume));
+  scheduleMidiOnBackend(backend, midi, undefined, seconds, 0.86, volume);
+}
+
+export function scheduleMidiOnBackend(
+  backend: PianoAudioBackend,
+  midi: number,
+  startTime: number | undefined,
+  durationSeconds: number,
+  velocity: number,
+  masterVolume = 1,
+): void {
+  backend.instrument.volume.value = volumeToDb(clampVolume(masterVolume));
   backend.instrument.triggerAttackRelease(
-    backend.Tone.Frequency(midi, "midi").toNote(),
-    seconds,
-    undefined,
-    0.86,
+    midiToPitchName(midi),
+    Math.max(0.05, durationSeconds),
+    startTime,
+    clampVolume(velocity),
   );
 }
 
@@ -117,12 +130,21 @@ export async function scheduleMidi(
   masterVolume = 1,
 ): Promise<void> {
   const backend = await ensurePianoEngine();
-  backend.instrument.volume.value = volumeToDb(clampVolume(masterVolume));
-  backend.instrument.triggerAttackRelease(
-    backend.Tone.Frequency(midi, "midi").toNote(),
-    Math.max(0.05, durationSeconds),
+  scheduleMidiOnBackend(backend, midi, startTime, durationSeconds, velocity, masterVolume);
+}
+
+export function scheduleMetronomeClickOnBackend(
+  backend: PianoAudioBackend,
+  startTime: number,
+  accented: boolean,
+  volume: number,
+): void {
+  backend.metronome.volume.value = volumeToDb(Math.max(0.01, volume));
+  backend.metronome.triggerAttackRelease(
+    accented ? "C7" : "C5",
+    accented ? 0.055 : 0.038,
     startTime,
-    clampVolume(velocity),
+    clampVolume(accented ? 0.92 : 0.58),
   );
 }
 
@@ -132,13 +154,7 @@ export async function scheduleMetronomeClick(
   volume: number,
 ): Promise<void> {
   const backend = await ensurePianoEngine();
-  backend.metronome.volume.value = volumeToDb(Math.max(0.01, volume));
-  backend.metronome.triggerAttackRelease(
-    accented ? "C7" : "C5",
-    accented ? 0.055 : 0.038,
-    startTime,
-    clampVolume(accented ? 0.92 : 0.58),
-  );
+  scheduleMetronomeClickOnBackend(backend, startTime, accented, volume);
 }
 
 export async function releaseAllPianoKeys(): Promise<void> {
