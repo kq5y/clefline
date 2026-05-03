@@ -106,6 +106,54 @@ describe("parseMusicXml", () => {
     ).toHaveLength(2);
   });
 
+  it("extends playback duration across tied notes", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>2</duration>
+        <tie type="start"/>
+        <voice>1</voice>
+        <type>half</type>
+        <staff>1</staff>
+        <notations><tied type="start"/></notations>
+      </note>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>1</duration>
+        <tie type="stop"/>
+        <voice>1</voice>
+        <type>quarter</type>
+        <staff>1</staff>
+        <notations><tied type="stop"/></notations>
+      </note>
+      <note>
+        <pitch><step>D</step><octave>4</octave></pitch>
+        <duration>1</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+        <staff>1</staff>
+      </note>
+    </measure>
+  </part>
+</score-partwise>`;
+    const score = parseMusicXml(xml);
+    const playback = buildPlaybackEvents(score);
+
+    expect(playback.map((event) => event.notes[0].pitchName)).toEqual(["C4", "D4"]);
+    expect(playback[0].durationBeats).toBe(3);
+  });
+
   it("expands D.S. al Fine into the playback timeline", () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="4.0">

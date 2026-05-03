@@ -134,8 +134,51 @@ function hasNotation(notes: NoteEvent[], type: string): boolean {
   return notes.some((note) => note.notations.some((notation) => notation.type === type));
 }
 
-function performanceDuration(notes: NoteEvent[]): number {
-  const durationBeats = Math.max(...notes.map((note) => note.durationBeats));
+function buildTiedDurationMap(notes: NoteEvent[]): Map<string, number> {
+  const groups = new Map<string, NoteEvent[]>();
+  const durations = new Map<string, number>();
+
+  for (const note of notes) {
+    if (!note.tieGroupId) {
+      continue;
+    }
+
+    groups.set(note.tieGroupId, [...(groups.get(note.tieGroupId) ?? []), note]);
+  }
+
+  for (const group of groups.values()) {
+    let chainStart: NoteEvent | undefined;
+    let chainDuration = 0;
+    for (const note of group.toSorted((a, b) => a.startBeat - b.startBeat)) {
+      chainStart ??= note;
+      chainDuration += note.durationBeats;
+
+      if (!note.tieStart) {
+        if (chainDuration > chainStart.durationBeats) {
+          durations.set(chainStart.id, chainDuration);
+        }
+        chainStart = undefined;
+        chainDuration = 0;
+      }
+    }
+
+    if (chainStart && chainDuration > chainStart.durationBeats) {
+      durations.set(chainStart.id, chainDuration);
+    }
+  }
+
+  return durations;
+}
+
+function playbackDuration(note: NoteEvent, tiedDurations: Map<string, number>): number {
+  return tiedDurations.get(note.id) ?? note.durationBeats;
+}
+
+function performanceDuration(notes: NoteEvent[], tiedDurations: Map<string, number>): number {
+  const durationBeats = Math.max(...notes.map((note) => playbackDuration(note, tiedDurations)));
+  if (notes.some((note) => tiedDurations.has(note.id))) {
+    return durationBeats;
+  }
   if (notes.some((note) => note.isGrace)) {
     return hasLongGrace(notes)
       ? clamp(durationBeats || 0.28, 0.24, 0.45)
@@ -189,6 +232,7 @@ function buildSourcePlaybackEvents(
   options: TimelineOptions = {},
 ): PlaybackEvent[] {
   const grouped = new Map<string, NoteEvent[]>();
+  const tiedDurations = buildTiedDurationMap(score.notes);
   const arpeggioBeats = new Set(
     score.notes.filter(isArpeggioNote).map((note) => beatKey(note.startBeat)),
   );
@@ -225,7 +269,7 @@ function buildSourcePlaybackEvents(
         id: `playback-${index}`,
         absoluteBeat: sourceStartBeat - graceLeadInBeats(orderedNotes),
         sourceStartBeat,
-        durationBeats: performanceDuration(orderedNotes),
+        durationBeats: performanceDuration(orderedNotes, tiedDurations),
         noteEventIds: orderedNotes.map((note) => note.id),
         notes: orderedNotes,
         measureNumber: first.measureNumber,

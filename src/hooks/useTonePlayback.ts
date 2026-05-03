@@ -49,6 +49,7 @@ export function useTonePlayback(): void {
   const eventCursorRef = useRef(0);
   const playbackEventsRef = useRef(usePracticeStore.getState().playbackEvents);
   const previousPositionRef = useRef(0);
+  const previousPositionTimeRef = useRef(0);
   const schedulingRef = useRef(false);
   const wasPlayingRef = useRef(false);
   const isPlaying = usePracticeStore((state) => state.isPlaying);
@@ -58,6 +59,7 @@ export function useTonePlayback(): void {
       scheduledRef.current.clear();
       eventCursorRef.current = 0;
       previousPositionRef.current = usePracticeStore.getState().positionBeats;
+      previousPositionTimeRef.current = window.performance.now();
       schedulingRef.current = false;
       if (wasPlayingRef.current) {
         void releaseAllPianoKeys();
@@ -83,6 +85,8 @@ export function useTonePlayback(): void {
       }
 
       try {
+        const scheduleTime = window.performance.now();
+        const beatRate = (initialTempo(score) / 60) * state.settings.speed;
         if (playbackEventsRef.current !== state.playbackEvents) {
           playbackEventsRef.current = state.playbackEvents;
           eventCursorRef.current = firstEventIndexAtOrAfter(
@@ -90,21 +94,28 @@ export function useTonePlayback(): void {
             state.positionBeats - 0.001,
           );
           scheduledRef.current.clear();
+          previousPositionRef.current = state.positionBeats;
+          previousPositionTimeRef.current = scheduleTime;
         }
 
-        if (Math.abs(state.positionBeats - previousPositionRef.current) > 0.35) {
+        const positionDelta = state.positionBeats - previousPositionRef.current;
+        const elapsedSeconds = Math.max(0, (scheduleTime - previousPositionTimeRef.current) / 1000);
+        const allowedForwardDelta = beatRate * elapsedSeconds + (document.hidden ? 0.85 : 0.35);
+        if (positionDelta < -0.05 || positionDelta > allowedForwardDelta) {
           eventCursorRef.current = firstEventIndexAtOrAfter(
             state.playbackEvents,
             state.positionBeats - 0.001,
           );
           scheduledRef.current.clear();
         }
-        previousPositionRef.current = state.positionBeats;
+        if (positionDelta !== 0) {
+          previousPositionRef.current = state.positionBeats;
+          previousPositionTimeRef.current = scheduleTime;
+        }
 
         const backend = await backendPromise;
         if (cancelled) return;
 
-        const beatRate = (initialTempo(score) / 60) * state.settings.speed;
         const beatSeconds = 1 / beatRate;
         const startBeat = state.positionBeats;
         const lookAheadSeconds = document.hidden ? HIDDEN_LOOK_AHEAD_SECONDS : LOOK_AHEAD_SECONDS;

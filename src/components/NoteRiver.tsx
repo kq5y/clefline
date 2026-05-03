@@ -89,6 +89,42 @@ function visualDurationBeats(note: NoteEvent): number {
   return isLongGrace(note) ? Math.max(0.24, Math.min(note.durationBeats || 0.28, 0.45)) : 0.14;
 }
 
+function buildTiedVisualDurationMap(notes: NoteEvent[]): Map<string, number> {
+  const groups = new Map<string, NoteEvent[]>();
+  const durations = new Map<string, number>();
+
+  for (const note of notes) {
+    if (!note.tieGroupId) {
+      continue;
+    }
+
+    groups.set(note.tieGroupId, [...(groups.get(note.tieGroupId) ?? []), note]);
+  }
+
+  for (const group of groups.values()) {
+    let chainStart: NoteEvent | undefined;
+    let chainDuration = 0;
+    for (const note of group.toSorted((a, b) => a.startBeat - b.startBeat)) {
+      chainStart ??= note;
+      chainDuration += visualDurationBeats(note);
+
+      if (!note.tieStart) {
+        if (chainDuration > visualDurationBeats(chainStart)) {
+          durations.set(chainStart.id, chainDuration);
+        }
+        chainStart = undefined;
+        chainDuration = 0;
+      }
+    }
+
+    if (chainStart && chainDuration > visualDurationBeats(chainStart)) {
+      durations.set(chainStart.id, chainDuration);
+    }
+  }
+
+  return durations;
+}
+
 function lowerBoundByStart<T extends { startBeat: number }>(items: T[], beat: number): number {
   let low = 0;
   let high = items.length;
@@ -136,10 +172,12 @@ export const NoteRiver = memo(function NoteRiver({
     }
 
     let maxDurationBeats = 0;
+    const tiedDurations = buildTiedVisualDurationMap(score.notes);
     const notes = score.notes
+      .filter((note) => !note.tieStop)
       .map((note) => {
         const startBeat = visualStartBeat(note);
-        const durationBeats = visualDurationBeats(note);
+        const durationBeats = tiedDurations.get(note.id) ?? visualDurationBeats(note);
         const layout = pianoKeyLayoutForMidi(note.midi);
         maxDurationBeats = Math.max(maxDurationBeats, durationBeats);
 
