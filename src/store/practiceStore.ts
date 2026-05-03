@@ -313,6 +313,45 @@ function performanceMeasureIndexAt(
   return match;
 }
 
+function nextPerformanceMeasureIndex(
+  measures: Array<{ absoluteBeat: number }>,
+  positionBeats: number,
+): number {
+  let low = 0;
+  let high = measures.length;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (measures[middle].absoluteBeat <= positionBeats + 0.001) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  return low;
+}
+
+function targetMeasureIndex(
+  measures: Array<{ absoluteBeat: number }>,
+  positionBeats: number,
+  delta: number,
+): number {
+  if (delta > 0) {
+    return nextPerformanceMeasureIndex(measures, positionBeats) + delta - 1;
+  }
+
+  const currentIndex = performanceMeasureIndexAt(measures, positionBeats);
+  if (currentIndex < 0) {
+    return -1;
+  }
+
+  const currentStart = measures[currentIndex].absoluteBeat;
+  const isNearMeasureStart = Math.abs(positionBeats - currentStart) <= 0.08;
+
+  return currentIndex + delta + (isNearMeasureStart ? 0 : 1);
+}
+
 export function sourceBeatAt(events: PlaybackEvent[], positionBeats: number): number {
   if (positionBeats < 0 || events.length === 0) {
     return positionBeats;
@@ -503,8 +542,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
     }
 
     const measures = performanceMeasures(score);
-    const currentIndex = performanceMeasureIndexAt(measures, positionBeats);
-    const nextIndex = currentIndex + delta;
+    const nextIndex = targetMeasureIndex(measures, positionBeats, delta);
     const nextPosition =
       nextIndex < 0 ? lower : measures[Math.min(measures.length - 1, nextIndex)]?.absoluteBeat;
     set({

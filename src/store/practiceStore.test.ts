@@ -69,6 +69,10 @@ describe("practiceStore seeking", () => {
     const store = usePracticeStore.getState();
     store.loadXml(simpleRepeatXml, "simple-repeat.musicxml");
 
+    usePracticeStore.getState().setPosition(3.4);
+    usePracticeStore.getState().seekByMeasures(-1);
+    expect(usePracticeStore.getState().positionBeats).toBe(3);
+
     usePracticeStore.getState().setPosition(3);
     usePracticeStore.getState().seekByMeasures(1);
     expect(usePracticeStore.getState().positionBeats).toBe(4);
