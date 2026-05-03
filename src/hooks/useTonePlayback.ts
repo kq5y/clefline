@@ -5,8 +5,14 @@ import {
   scheduleMetronomeClick,
   scheduleMidi,
 } from "../lib/audio/pianoEngine";
-import { initialTempo, loopBounds, usePracticeStore } from "../store/practiceStore";
-import type { ScoreModel } from "../lib/musicxml";
+import {
+  initialTempo,
+  loopBounds,
+  playbackEndBeat,
+  type PracticeSettings,
+  usePracticeStore,
+} from "../store/practiceStore";
+import type { PlaybackEvent, ScoreModel } from "../lib/musicxml";
 
 const SCHEDULE_INTERVAL_MS = 25;
 const LOOK_AHEAD_SECONDS = 0.2;
@@ -42,6 +48,14 @@ function isMeasureStartBeat(beat: number): boolean {
   }
 
   return starts.has(beat.toFixed(3));
+}
+
+export function audioScheduleEndBeat(
+  score: ScoreModel,
+  events: PlaybackEvent[],
+  settings: PracticeSettings,
+): number {
+  return loopBounds(score, settings)?.endBeat ?? playbackEndBeat(score, events);
 }
 
 export function useTonePlayback(): void {
@@ -119,11 +133,8 @@ export function useTonePlayback(): void {
         const beatSeconds = 1 / beatRate;
         const startBeat = state.positionBeats;
         const lookAheadSeconds = document.hidden ? HIDDEN_LOOK_AHEAD_SECONDS : LOOK_AHEAD_SECONDS;
-        const bounds = loopBounds(score, state.settings);
-        const endBeat = Math.min(
-          bounds?.endBeat ?? score.totalBeats,
-          startBeat + lookAheadSeconds * beatRate,
-        );
+        const endLimit = audioScheduleEndBeat(score, state.playbackEvents, state.settings);
+        const endBeat = Math.min(endLimit, startBeat + lookAheadSeconds * beatRate);
 
         if (state.settings.metronomeEnabled) {
           const firstBeat = Math.ceil(startBeat - 0.0001);
