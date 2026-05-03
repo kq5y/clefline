@@ -55,10 +55,9 @@ function samplerUrls(): Record<string, string> {
   );
 }
 
-export async function ensurePianoEngine(): Promise<AudioBackend> {
+async function loadPianoEngine(): Promise<AudioBackend> {
   backendPromise ??= (async () => {
     const Tone = await import("tone");
-    await Tone.start();
 
     const instrument = new Tone.Sampler({
       urls: samplerUrls(),
@@ -86,6 +85,17 @@ export async function ensurePianoEngine(): Promise<AudioBackend> {
   })();
 
   return backendPromise;
+}
+
+export async function preloadPianoEngine(): Promise<void> {
+  await loadPianoEngine();
+}
+
+export async function ensurePianoEngine(): Promise<AudioBackend> {
+  const backend = await loadPianoEngine();
+  await backend.Tone.start();
+
+  return backend;
 }
 
 export async function playMidiOnce(midi: number, volume: number, seconds = 0.7): Promise<void> {

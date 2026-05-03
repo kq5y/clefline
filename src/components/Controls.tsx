@@ -51,13 +51,14 @@ function blurPointerButton(event: PointerEvent<HTMLElement>): void {
 
 export const Controls = memo(function Controls() {
   const [openPanel, setOpenPanel] = useState<"info" | "practice" | undefined>();
-  const [audioLoading, setAudioLoading] = useState(false);
   const repeatDelayRef = useRef<number | undefined>(undefined);
   const repeatIntervalRef = useRef<number | undefined>(undefined);
   const score = usePracticeStore((state) => state.score);
   const loadedName = usePracticeStore((state) => state.loadedName);
   const isLoading = usePracticeStore((state) => state.isLoading);
   const loadError = usePracticeStore((state) => state.loadError);
+  const audioStatus = usePracticeStore((state) => state.audioStatus);
+  const audioError = usePracticeStore((state) => state.audioError);
   const isPlaying = usePracticeStore((state) => state.isPlaying);
   const playbackEvents = usePracticeStore((state) =>
     openPanel === "info" ? state.playbackEvents : EMPTY_PLAYBACK_EVENTS,
@@ -69,6 +70,8 @@ export const Controls = memo(function Controls() {
   const loadFile = usePracticeStore((state) => state.loadFile);
   const loadSample = usePracticeStore((state) => state.loadSample);
   const togglePlaying = usePracticeStore((state) => state.togglePlaying);
+  const preloadAudio = usePracticeStore((state) => state.preloadAudio);
+  const setAudioError = usePracticeStore((state) => state.setAudioError);
   const reset = usePracticeStore((state) => state.reset);
   const seekByMeasures = usePracticeStore((state) => state.seekByMeasures);
   const updateSettings = usePracticeStore((state) => state.updateSettings);
@@ -95,12 +98,16 @@ export const Controls = memo(function Controls() {
       return;
     }
 
-    setAudioLoading(true);
+    const ready = audioStatus === "ready" || (await preloadAudio());
+    if (!ready) {
+      return;
+    }
+
     try {
       await ensurePianoEngine();
       togglePlaying();
-    } finally {
-      setAudioLoading(false);
+    } catch (error) {
+      setAudioError(error instanceof Error ? error.message : "Failed to start piano audio.");
     }
   };
   const stopMeasureRepeat = useCallback(() => {
@@ -135,6 +142,12 @@ export const Controls = memo(function Controls() {
     [seekByMeasures],
   );
 
+  useEffect(() => {
+    if (score && audioStatus !== "ready" && audioStatus !== "loading") {
+      void preloadAudio();
+    }
+  }, [audioStatus, preloadAudio, score]);
+
   useEffect(() => stopMeasureRepeat, [stopMeasureRepeat]);
 
   return (
@@ -157,7 +170,7 @@ export const Controls = memo(function Controls() {
             type="button"
             className="round-button"
             onClick={() => void onPlayClick()}
-            disabled={!score || audioLoading}
+            disabled={!score || audioStatus === "loading"}
           >
             {isPlaying ? <Pause size={18} /> : <Play size={18} />}
           </button>
@@ -236,9 +249,13 @@ export const Controls = memo(function Controls() {
           </button>
         </div>
       </header>
-      {loadError ? <div className="toast-error">{loadError}</div> : null}
-      {isLoading || audioLoading ? (
-        <div className="toast-info">{audioLoading ? "Loading piano..." : "Loading score..."}</div>
+      {loadError || audioError ? (
+        <div className="toast-error">{loadError ?? audioError}</div>
+      ) : null}
+      {isLoading || audioStatus === "loading" ? (
+        <div className="toast-info">
+          {audioStatus === "loading" ? "Loading piano..." : "Loading score..."}
+        </div>
       ) : null}
       {openPanel ? (
         <button

@@ -66,11 +66,25 @@ function App() {
         state.togglePlaying();
         return;
       }
+      if (state.audioStatus === "loading") {
+        return;
+      }
 
-      void ensurePianoEngine().then(() => {
-        const latest = usePracticeStore.getState();
-        if (latest.score && !latest.isPlaying) {
-          latest.togglePlaying();
+      void state.preloadAudio().then(async (ready) => {
+        if (!ready) {
+          return;
+        }
+
+        try {
+          await ensurePianoEngine();
+          const latest = usePracticeStore.getState();
+          if (latest.score && !latest.isPlaying) {
+            latest.togglePlaying();
+          }
+        } catch (error) {
+          usePracticeStore
+            .getState()
+            .setAudioError(error instanceof Error ? error.message : "Failed to start piano audio.");
         }
       });
     };

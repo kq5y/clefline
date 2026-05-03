@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { preloadPianoEngine } from "../lib/audio/pianoEngine";
 import {
   buildPlaybackEvents,
   buildPlaybackSections,
@@ -12,6 +13,7 @@ import {
 
 export type ViewMode = "river" | "score";
 export type HandMode = "both" | "right" | "left";
+export type AudioStatus = "idle" | "loading" | "ready" | "error";
 
 export type PracticeSettings = {
   viewMode: ViewMode;
@@ -33,6 +35,8 @@ type PracticeState = {
   loadedName?: string;
   isLoading: boolean;
   loadError?: string;
+  audioStatus: AudioStatus;
+  audioError?: string;
   isPlaying: boolean;
   positionBeats: number;
   settings: PracticeSettings;
@@ -43,6 +47,8 @@ type PracticeState = {
   togglePlaying: () => void;
   setPosition: (positionBeats: number) => void;
   seekByMeasures: (delta: number) => void;
+  preloadAudio: () => Promise<boolean>;
+  setAudioError: (message?: string) => void;
   reset: () => void;
   updateSettings: (patch: Partial<PracticeSettings>) => void;
 };
@@ -407,6 +413,7 @@ export function activeNotesAt(events: PlaybackEvent[], positionBeats: number) {
 export const usePracticeStore = create<PracticeState>((set, get) => ({
   playbackEvents: [],
   isLoading: false,
+  audioStatus: "idle",
   isPlaying: false,
   positionBeats: 0,
   settings: DEFAULT_SETTINGS,
@@ -502,6 +509,38 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       nextIndex < 0 ? lower : measures[Math.min(measures.length - 1, nextIndex)]?.absoluteBeat;
     set({
       positionBeats: clampPosition(score, playbackEvents, nextPosition ?? positionBeats),
+    });
+  },
+
+  async preloadAudio() {
+    const status = get().audioStatus;
+    if (status === "ready") {
+      return true;
+    }
+    if (status === "loading") {
+      return false;
+    }
+
+    set({ audioStatus: "loading", audioError: undefined });
+    try {
+      await preloadPianoEngine();
+      set({ audioStatus: "ready", audioError: undefined });
+      return true;
+    } catch (error) {
+      set({
+        audioStatus: "error",
+        audioError: error instanceof Error ? error.message : "Failed to load piano audio.",
+        isPlaying: false,
+      });
+      return false;
+    }
+  },
+
+  setAudioError(message) {
+    set({
+      audioStatus: message ? "error" : "idle",
+      audioError: message,
+      isPlaying: false,
     });
   },
 
