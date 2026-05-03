@@ -1,4 +1,5 @@
 import { memo, useMemo } from "react";
+import { pianoKeyLayoutForMidi } from "../lib/pianoLayout";
 import type { HandMode } from "../store/practiceStore";
 import type { ScoreModel } from "../lib/musicxml";
 
@@ -11,16 +12,12 @@ type NoteRiverProps = {
   showNoteNames: boolean;
 };
 
-const BASE_LOOK_AHEAD_BEATS = 16;
+const BASE_LOOK_AHEAD_BEATS = 8;
 const LOOK_BEHIND_BEATS = 0.5;
 const STRIKE_Y = 100;
 
 function includeVisual(handMode: HandMode, hand: string): boolean {
   return handMode === "both" || hand === handMode;
-}
-
-function xForMidi(midi: number): number {
-  return ((midi - 21) / 87) * 100;
 }
 
 function yForBeat(beat: number, positionBeats: number, lookAheadBeats: number): number {
@@ -81,22 +78,17 @@ export const NoteRiver = memo(function NoteRiver({
   return (
     <div className="note-river" aria-label="Falling notes">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="right-note" x1="0" x2="1">
-            <stop offset="0%" stopColor="#f38e72" />
-            <stop offset="100%" stopColor="#ffd166" />
-          </linearGradient>
-          <linearGradient id="left-note" x1="0" x2="1">
-            <stop offset="0%" stopColor="#4cc9f0" />
-            <stop offset="100%" stopColor="#72d6b0" />
-          </linearGradient>
-        </defs>
         {showMeasureLines
           ? measureLines.map((measure) => {
               const y = yForBeat(measure.startBeat, positionBeats, lookAheadBeats);
 
               return (
-                <line className="measure-line" key={measure.index} x1="0" x2="100" y1={y} y2={y} />
+                <g className="measure-marker" key={measure.index}>
+                  <line className="measure-line" x1="0" x2="100" y1={y} y2={y} />
+                  <text className="measure-label" x="1.2" y={Math.min(98, Math.max(3, y - 0.9))}>
+                    {measure.number}
+                  </text>
+                </g>
               );
             })
           : null}
@@ -108,21 +100,25 @@ export const NoteRiver = memo(function NoteRiver({
           const bottom = Math.min(STRIKE_Y, Math.max(startY, endY));
           const height = Math.max(1.2, bottom - top);
           const attackY = Math.min(STRIKE_Y, Math.max(0, startY));
+          const layout = pianoKeyLayoutForMidi(note.midi);
+          const x = layout.centerPercent - layout.noteWidthPercent / 2;
           const selected = includeVisual(handMode, note.hand);
           return (
             <g className="river-note-group" key={note.id} opacity={selected ? 1 : 0.18}>
               <rect
-                className={note.hand === "left" ? "river-note left" : "river-note right"}
-                x={xForMidi(note.midi) - 0.38}
+                className={`river-note ${note.hand} ${layout.black ? "black-note" : "white-note"}`}
+                data-midi={note.midi}
+                data-pitch={note.pitchName}
+                x={x}
                 y={top}
-                width="0.76"
+                width={layout.noteWidthPercent}
                 height={height}
-                rx="0.28"
+                rx={layout.black ? "0.16" : "0.22"}
               />
               <line
-                className={note.hand === "left" ? "note-attack left" : "note-attack right"}
-                x1={xForMidi(note.midi) - 0.38}
-                x2={xForMidi(note.midi) + 0.38}
+                className="note-attack"
+                x1={x}
+                x2={x + layout.noteWidthPercent}
                 y1={attackY}
                 y2={attackY}
               />

@@ -10,6 +10,7 @@ test("loads the public sample and switches between river and score views", async
 
   await page.getByRole("button", { name: /Science sample/ }).click();
   await expect(page.getByLabel("Falling notes")).toBeVisible();
+  await expect(page.locator(".measure-label").first()).toBeVisible();
   await page.getByRole("button", { name: /Info/ }).click();
   await expect(page.getByText("sample_science.musicxml")).toBeVisible();
   await expect(page.getByText("89 measures")).toBeVisible();

@@ -77,7 +77,7 @@ function followCursorElement(view: HTMLDivElement): void {
   view.scrollTo({
     left: Math.max(0, view.scrollLeft + delta),
     top: 0,
-    behavior: "auto",
+    behavior: "smooth",
   });
 }
 

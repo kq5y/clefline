@@ -3,7 +3,7 @@ import { ensurePianoEngine, releaseAllPianoKeys, scheduleMidi } from "../lib/aud
 import { initialTempo, loopBounds, usePracticeStore } from "../store/practiceStore";
 
 const SCHEDULE_INTERVAL_MS = 25;
-const LOOK_AHEAD_SECONDS = 0.16;
+const LOOK_AHEAD_SECONDS = 0.32;
 
 export function useTonePlayback(): void {
   const scheduledRef = useRef<Set<string>>(new Set());

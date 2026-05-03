@@ -48,7 +48,7 @@ const DEFAULT_SETTINGS: PracticeSettings = {
   viewMode: "river",
   speed: 1,
   riverZoom: 1,
-  showMeasureLines: false,
+  showMeasureLines: true,
   loopEnabled: false,
   handMode: "both",
   volume: 0.75,
@@ -87,33 +87,41 @@ export function loopBounds(score: ScoreModel | undefined, settings: PracticeSett
 }
 
 export function activeMidiAt(events: PlaybackEvent[], positionBeats: number): number[] {
-  return Array.from(
-    new Set(
-      events
-        .filter(
-          (event) =>
-            event.absoluteBeat <= positionBeats &&
-            event.absoluteBeat + Math.max(event.durationBeats, 0.1) > positionBeats,
-        )
-        .flatMap((event) => event.notes.map((note) => note.midi)),
-    ),
-  );
+  const active = new Set<number>();
+  for (const event of events) {
+    if (event.absoluteBeat > positionBeats) {
+      break;
+    }
+    if (event.absoluteBeat + Math.max(event.durationBeats, 0.1) <= positionBeats) {
+      continue;
+    }
+    for (const note of event.notes) {
+      active.add(note.midi);
+    }
+  }
+
+  return Array.from(active);
 }
 
 export function activeNotesAt(events: PlaybackEvent[], positionBeats: number) {
-  return events
-    .filter(
-      (event) =>
-        event.absoluteBeat <= positionBeats &&
-        event.absoluteBeat + Math.max(event.durationBeats, 0.1) > positionBeats,
-    )
-    .flatMap((event) =>
-      event.notes.map((note) => ({
+  const active: Array<{ midi: number; hand: Hand; pitchName: string }> = [];
+  for (const event of events) {
+    if (event.absoluteBeat > positionBeats) {
+      break;
+    }
+    if (event.absoluteBeat + Math.max(event.durationBeats, 0.1) <= positionBeats) {
+      continue;
+    }
+    for (const note of event.notes) {
+      active.push({
         midi: note.midi,
         hand: note.hand,
         pitchName: note.pitchName,
-      })),
-    );
+      });
+    }
+  }
+
+  return active;
 }
 
 export const usePracticeStore = create<PracticeState>((set, get) => ({

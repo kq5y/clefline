@@ -21,6 +21,9 @@ import {
   loopBounds,
   usePracticeStore,
 } from "../store/practiceStore";
+import type { PlaybackEvent } from "../lib/musicxml";
+
+const EMPTY_PLAYBACK_EVENTS: PlaybackEvent[] = [];
 
 export function Controls() {
   const [openPanel, setOpenPanel] = useState<"info" | "practice" | undefined>();
@@ -30,8 +33,12 @@ export function Controls() {
   const isLoading = usePracticeStore((state) => state.isLoading);
   const loadError = usePracticeStore((state) => state.loadError);
   const isPlaying = usePracticeStore((state) => state.isPlaying);
-  const playbackEvents = usePracticeStore((state) => state.playbackEvents);
-  const positionBeats = usePracticeStore((state) => state.positionBeats);
+  const playbackEvents = usePracticeStore((state) =>
+    openPanel === "info" ? state.playbackEvents : EMPTY_PLAYBACK_EVENTS,
+  );
+  const positionBeats = usePracticeStore((state) =>
+    openPanel === "info" ? state.positionBeats : 0,
+  );
   const settings = usePracticeStore((state) => state.settings);
   const loadFile = usePracticeStore((state) => state.loadFile);
   const loadSample = usePracticeStore((state) => state.loadSample);

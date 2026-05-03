@@ -1,36 +1,12 @@
 import { memo, useCallback, useMemo } from "react";
-import { isBlackKey, midiToPitchName, PIANO_MAX_MIDI, PIANO_MIN_MIDI } from "../lib/musicxml";
 import { playMidiOnce } from "../lib/audio/pianoEngine";
+import { BLACK_KEY_LAYOUTS, WHITE_KEY_LAYOUTS } from "../lib/pianoLayout";
 import type { Hand } from "../lib/musicxml";
 
 type PianoKeyboardProps = {
   activeNotes: Array<{ midi: number; hand: Hand }>;
   showNoteNames: boolean;
 };
-
-const KEYS = Array.from({ length: PIANO_MAX_MIDI - PIANO_MIN_MIDI + 1 }, (_, index) => {
-  const midi = PIANO_MIN_MIDI + index;
-
-  return {
-    midi,
-    name: midiToPitchName(midi),
-    black: isBlackKey(midi),
-  };
-});
-
-const WHITE_KEYS = KEYS.filter((key) => !key.black);
-const BLACK_KEYS = KEYS.filter((key) => key.black);
-
-function whiteIndexFor(midi: number): number {
-  return WHITE_KEYS.findIndex((key) => key.midi === midi);
-}
-
-function blackLeftPercent(midi: number): number {
-  const previousWhiteIndex = WHITE_KEYS.findLast((key) => key.midi < midi);
-  const whiteIndex = previousWhiteIndex ? whiteIndexFor(previousWhiteIndex.midi) : 0;
-
-  return ((whiteIndex + 1) / WHITE_KEYS.length) * 100;
-}
 
 function activeClass(hand: Hand | undefined, black: boolean): string {
   const base = black ? "black-key" : "white-key";
@@ -62,7 +38,7 @@ export const PianoKeyboard = memo(function PianoKeyboard({
   return (
     <div className="piano-keyboard">
       <div className="white-keys">
-        {WHITE_KEYS.map((key) => (
+        {WHITE_KEY_LAYOUTS.map((key) => (
           <button
             aria-label={key.name}
             className={activeClass(active.get(key.midi), false)}
@@ -76,13 +52,16 @@ export const PianoKeyboard = memo(function PianoKeyboard({
         ))}
       </div>
       <div className="black-keys">
-        {BLACK_KEYS.map((key) => (
+        {BLACK_KEY_LAYOUTS.map((key) => (
           <button
             aria-label={key.name}
             className={activeClass(active.get(key.midi), true)}
             key={key.midi}
             onPointerDown={() => playKey(key.midi)}
-            style={{ left: `${blackLeftPercent(key.midi)}%` }}
+            style={{
+              left: `${key.centerPercent}%`,
+              width: `${key.keyWidthPercent}%`,
+            }}
             type="button"
           />
         ))}
