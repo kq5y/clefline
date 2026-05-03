@@ -33,9 +33,35 @@ import {
   sourceBeatAt,
   usePracticeStore,
 } from "../store/practiceStore";
-import type { PlaybackEvent } from "../lib/musicxml";
+import type { PlaybackEvent, ScoreModel } from "../lib/musicxml";
 
 const EMPTY_PLAYBACK_EVENTS: PlaybackEvent[] = [];
+const UNTITLED_SCORE = "Untitled Score";
+
+function titleFromSourceName(sourceName: string | undefined): string | undefined {
+  const stem = sourceName
+    ?.split("/")
+    .pop()
+    ?.replace(/\.(musicxml|mxl|xml)$/i, "")
+    .trim();
+  if (!stem) {
+    return undefined;
+  }
+
+  return stem
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function displayScoreTitle(score: ScoreModel | undefined, sourceName?: string) {
+  const title = score?.metadata.title?.trim();
+  if (title && title !== UNTITLED_SCORE) {
+    return title;
+  }
+
+  return titleFromSourceName(sourceName) ?? score?.metadata.partName?.trim() ?? "Clefline";
+}
 
 function blurPointerButton(event: PointerEvent<HTMLElement>): void {
   const target = event.target;
@@ -75,7 +101,7 @@ export const Controls = memo(function Controls() {
   const reset = usePracticeStore((state) => state.reset);
   const seekByMeasures = usePracticeStore((state) => state.seekByMeasures);
   const updateSettings = usePracticeStore((state) => state.updateSettings);
-  const displayTitle = score?.metadata.title?.trim() || "Clefline";
+  const displayTitle = displayScoreTitle(score, loadedName);
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -152,6 +178,22 @@ export const Controls = memo(function Controls() {
     }
   }, [audioStatus, preloadAudio, score]);
 
+  useEffect(() => {
+    if (!openPanel) {
+      return undefined;
+    }
+
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenPanel(undefined);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openPanel]);
+
   useEffect(() => stopMeasureRepeat, [stopMeasureRepeat]);
 
   return (
@@ -172,13 +214,20 @@ export const Controls = memo(function Controls() {
           </label>
           <button
             type="button"
+            aria-label={isPlaying ? "Pause" : "Play"}
             className="round-button"
             onClick={() => void onPlayClick()}
             disabled={!score || audioStatus === "loading"}
           >
             {isPlaying ? <Pause size={18} /> : <Play size={18} />}
           </button>
-          <button type="button" className="round-button" onClick={reset} disabled={!score}>
+          <button
+            type="button"
+            aria-label="Restart score"
+            className="round-button"
+            onClick={reset}
+            disabled={!score}
+          >
             <RotateCcw size={18} />
           </button>
           <button
@@ -238,6 +287,8 @@ export const Controls = memo(function Controls() {
           <button
             type="button"
             className="icon-button"
+            aria-controls="options-panel"
+            aria-expanded={openPanel === "practice"}
             onClick={() => setOpenPanel(openPanel === "practice" ? undefined : "practice")}
           >
             <SlidersHorizontal size={17} />
@@ -246,6 +297,8 @@ export const Controls = memo(function Controls() {
           <button
             type="button"
             className="icon-button"
+            aria-controls="options-panel"
+            aria-expanded={openPanel === "info"}
             onClick={() => setOpenPanel(openPanel === "info" ? undefined : "info")}
           >
             <Info size={17} />
@@ -254,10 +307,12 @@ export const Controls = memo(function Controls() {
         </div>
       </header>
       {loadError || audioError ? (
-        <div className="toast-error">{loadError ?? audioError}</div>
+        <div className="toast-error" role="alert">
+          {loadError ?? audioError}
+        </div>
       ) : null}
       {isLoading || audioStatus === "loading" ? (
-        <div className="toast-info">
+        <div className="toast-info" role="status" aria-live="polite">
           {audioStatus === "loading" ? "Loading piano..." : "Loading score..."}
         </div>
       ) : null}
@@ -269,7 +324,13 @@ export const Controls = memo(function Controls() {
           onClick={() => setOpenPanel(undefined)}
         />
       ) : null}
-      <aside className={openPanel ? "side-panel open" : "side-panel"} aria-label="Options panel">
+      <aside
+        id="options-panel"
+        className={openPanel ? "side-panel open" : "side-panel"}
+        aria-hidden={!openPanel}
+        aria-label="Options panel"
+        inert={!openPanel}
+      >
         <div className="side-panel-header">
           <span>{openPanel === "info" ? "Score info" : "Practice"}</span>
           <button
@@ -306,6 +367,13 @@ export const Controls = memo(function Controls() {
                 <span>{warning.message}</span>
               </div>
             ))}
+            <div className="panel-card">
+              <strong>Shortcuts</strong>
+              <span>Space: Play / Pause</span>
+              <span>Left / Right: Previous / Next measure</span>
+              <span>Hold Left / Right: Repeat measure movement</span>
+              <span>Esc: Close this panel</span>
+            </div>
           </div>
         ) : null}
         {openPanel === "practice" ? (
