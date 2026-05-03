@@ -22,7 +22,10 @@ const RENDER_BUFFER_BEATS = 2.5;
 const REANCHOR_AHEAD_BEATS = 1.45;
 const REANCHOR_BEHIND_BEATS = 0.55;
 const LOOK_BEHIND_BEATS = 0.5;
+const SPAWN_Y = 18;
 const STRIKE_Y = 100;
+const VIEWBOX_HEIGHT = STRIKE_Y + SPAWN_Y;
+const VIEWBOX_TOP = -SPAWN_Y;
 
 type MeasureMarker = {
   index: number;
@@ -73,7 +76,11 @@ function yForBeat(beat: number, positionBeats: number, lookAheadBeats: number): 
 }
 
 function clampVisibleY(value: number): number {
-  return Math.min(STRIKE_Y, Math.max(-10, value));
+  return Math.min(STRIKE_Y, Math.max(VIEWBOX_TOP, value));
+}
+
+function yToPercent(value: number): number {
+  return ((value - VIEWBOX_TOP) / VIEWBOX_HEIGHT) * 100;
 }
 
 function isLongGrace(note: NoteEvent): boolean {
@@ -317,7 +324,8 @@ export const NoteRiver = memo(function NoteRiver({
     const deltaY = ((positionBeats - windowBeatRef.current) / lookAheadBeatsRef.current) * STRIKE_Y;
     motionGroupRef.current?.setAttribute("transform", `translate(0 ${deltaY.toFixed(3)})`);
     if (measureLabelLayerRef.current) {
-      measureLabelLayerRef.current.style.transform = `translate3d(0, ${deltaY.toFixed(3)}%, 0)`;
+      const deltaPercent = (deltaY / VIEWBOX_HEIGHT) * 100;
+      measureLabelLayerRef.current.style.transform = `translate3d(0, ${deltaPercent.toFixed(3)}%, 0)`;
     }
   }, []);
 
@@ -401,7 +409,7 @@ export const NoteRiver = memo(function NoteRiver({
 
   return (
     <div className="note-river" aria-label="Falling notes">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+      <svg viewBox={`0 ${VIEWBOX_TOP} 100 ${VIEWBOX_HEIGHT}`} preserveAspectRatio="none">
         <g className="river-motion-layer" ref={motionGroupRef}>
           {showMeasureLines
             ? measureLines.map((measure) => {
@@ -475,12 +483,13 @@ export const NoteRiver = memo(function NoteRiver({
         <div className="measure-label-layer" ref={measureLabelLayerRef} aria-hidden="true">
           {measureLines.map((measure) => {
             const y = yForBeat(measure.startBeat, windowBeat, lookAheadBeats);
+            const top = yToPercent(y);
 
             return (
               <span
                 className="measure-label"
                 key={measure.index}
-                style={{ top: `${Math.min(96, Math.max(2, y - 2.2))}%` }}
+                style={{ top: `${Math.min(96, Math.max(2, top - 2.2))}%` }}
               >
                 {measure.number}
               </span>
