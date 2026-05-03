@@ -27,6 +27,8 @@ const STRIKE_Y = 100;
 const VIEWBOX_HEIGHT = STRIKE_Y + SPAWN_Y;
 const VIEWBOX_TOP = -SPAWN_Y;
 const MIN_NOTE_HEIGHT_Y = 1.2;
+const MEASURE_LABEL_HEIGHT_PX = 20;
+const MEASURE_LABEL_EDGE_PADDING_PX = 6;
 
 type MeasureMarker = {
   index: number;
@@ -74,10 +76,6 @@ function includeVisual(handMode: HandMode, hand: string): boolean {
 
 function yForBeat(beat: number, positionBeats: number, lookAheadBeats: number): number {
   return STRIKE_Y - ((beat - positionBeats) / lookAheadBeats) * STRIKE_Y;
-}
-
-function yToPercent(value: number): number {
-  return ((value - VIEWBOX_TOP) / VIEWBOX_HEIGHT) * 100;
 }
 
 function isLongGrace(note: NoteEvent): boolean {
@@ -216,13 +214,16 @@ export const NoteRiver = memo(function NoteRiver({
   const lookAheadBeats = BASE_LOOK_AHEAD_BEATS / Math.max(0.5, riverZoom);
   const [windowBeat, setWindowBeat] = useState(currentDisplayBeat);
   const [activeLabels, setActiveLabels] = useState<NoteEvent[]>([]);
+  const riverRef = useRef<HTMLDivElement | null>(null);
   const motionGroupRef = useRef<SVGGElement | null>(null);
-  const measureLabelLayerRef = useRef<HTMLDivElement | null>(null);
   const windowBeatRef = useRef(windowBeat);
   const pendingWindowBeatRef = useRef<number | undefined>(undefined);
   const latestPositionBeatRef = useRef(windowBeat);
   const lookAheadBeatsRef = useRef(lookAheadBeats);
+  const riverHeightRef = useRef(0);
   const visualScoreRef = useRef<VisualScore>(EMPTY_VISUAL_SCORE);
+  const measureLinesRef = useRef<MeasureMarker[]>([]);
+  const measureLabelRefs = useRef(new Map<number, HTMLSpanElement>());
   const handModeRef = useRef(handMode);
   const showNoteNamesRef = useRef(showNoteNames);
   const labelSignatureRef = useRef("");
@@ -308,6 +309,7 @@ export const NoteRiver = memo(function NoteRiver({
 
     return visualScore.measures.slice(startIndex, endIndex);
   }, [lookAheadBeats, visualScore, windowBeat]);
+  measureLinesRef.current = measureLines;
   const glissandoSegments = useMemo(
     () =>
       visualScore.glissandoSegments.filter(
@@ -317,14 +319,58 @@ export const NoteRiver = memo(function NoteRiver({
       ),
     [lookAheadBeats, visualScore, windowBeat],
   );
-  const updateMotion = useCallback((positionBeats: number) => {
-    const deltaY = ((positionBeats - windowBeatRef.current) / lookAheadBeatsRef.current) * STRIKE_Y;
-    motionGroupRef.current?.setAttribute("transform", `translate(0 ${deltaY.toFixed(3)})`);
-    if (measureLabelLayerRef.current) {
-      const deltaPercent = (deltaY / VIEWBOX_HEIGHT) * 100;
-      measureLabelLayerRef.current.style.transform = `translate3d(0, ${deltaPercent.toFixed(3)}%, 0)`;
+  const positionMeasureLabels = useCallback((positionBeats: number) => {
+    const riverHeight = riverHeightRef.current || riverRef.current?.clientHeight || 0;
+    if (riverHeight <= 0) {
+      return;
+    }
+
+    const centerInset = MEASURE_LABEL_EDGE_PADDING_PX + MEASURE_LABEL_HEIGHT_PX / 2;
+    const minCenter = centerInset;
+    const maxCenter = Math.max(minCenter, riverHeight - centerInset);
+    for (const measure of measureLinesRef.current) {
+      const label = measureLabelRefs.current.get(measure.index);
+      if (!label) {
+        continue;
+      }
+
+      const y = yForBeat(measure.startBeat, positionBeats, lookAheadBeatsRef.current);
+      const centerPx = ((y - VIEWBOX_TOP) / VIEWBOX_HEIGHT) * riverHeight;
+      const clampedCenterPx = Math.min(maxCenter, Math.max(minCenter, centerPx));
+      label.style.top = `${Math.round(clampedCenterPx - MEASURE_LABEL_HEIGHT_PX / 2)}px`;
     }
   }, []);
+  const updateMotion = useCallback(
+    (positionBeats: number) => {
+      const deltaY =
+        ((positionBeats - windowBeatRef.current) / lookAheadBeatsRef.current) * STRIKE_Y;
+      motionGroupRef.current?.setAttribute("transform", `translate(0 ${deltaY.toFixed(3)})`);
+      positionMeasureLabels(positionBeats);
+    },
+    [positionMeasureLabels],
+  );
+
+  useLayoutEffect(() => {
+    const element = riverRef.current;
+    if (!element) {
+      return;
+    }
+
+    const updateHeight = () => {
+      riverHeightRef.current = element.clientHeight;
+      positionMeasureLabels(latestPositionBeatRef.current);
+    };
+    updateHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, [positionMeasureLabels]);
 
   useEffect(() => {
     const nextBeat = currentDisplayBeat();
@@ -340,6 +386,10 @@ export const NoteRiver = memo(function NoteRiver({
     pendingWindowBeatRef.current = undefined;
     updateMotion(latestPositionBeatRef.current);
   }, [updateMotion, windowBeat]);
+
+  useLayoutEffect(() => {
+    positionMeasureLabels(latestPositionBeatRef.current);
+  }, [measureLines, positionMeasureLabels]);
 
   useEffect(() => {
     const update = () => {
@@ -405,7 +455,7 @@ export const NoteRiver = memo(function NoteRiver({
   }
 
   return (
-    <div className="note-river" aria-label="Falling notes">
+    <div className="note-river" ref={riverRef} aria-label="Falling notes">
       <svg viewBox={`0 ${VIEWBOX_TOP} 100 ${VIEWBOX_HEIGHT}`} preserveAspectRatio="none">
         <g className="river-motion-layer" ref={motionGroupRef}>
           {showMeasureLines
@@ -477,21 +527,22 @@ export const NoteRiver = memo(function NoteRiver({
         <line className="strike-line" x1="0" x2="100" y1={STRIKE_Y} y2={STRIKE_Y} />
       </svg>
       {showMeasureLines ? (
-        <div className="measure-label-layer" ref={measureLabelLayerRef} aria-hidden="true">
-          {measureLines.map((measure) => {
-            const y = yForBeat(measure.startBeat, windowBeat, lookAheadBeats);
-            const top = yToPercent(y);
-
-            return (
-              <span
-                className="measure-label"
-                key={measure.index}
-                style={{ top: `${Math.min(96, Math.max(2, top - 2.2))}%` }}
-              >
-                {measure.number}
-              </span>
-            );
-          })}
+        <div className="measure-label-layer" aria-hidden="true">
+          {measureLines.map((measure) => (
+            <span
+              className="measure-label"
+              key={measure.index}
+              ref={(element) => {
+                if (element) {
+                  measureLabelRefs.current.set(measure.index, element);
+                  return;
+                }
+                measureLabelRefs.current.delete(measure.index);
+              }}
+            >
+              {measure.number}
+            </span>
+          ))}
         </div>
       ) : null}
       {showNoteNames ? (
