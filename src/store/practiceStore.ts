@@ -53,7 +53,9 @@ type PracticeState = {
   updateSettings: (patch: Partial<PracticeSettings>) => void;
 };
 
-const DEFAULT_SETTINGS: PracticeSettings = {
+const SETTINGS_STORAGE_KEY = "clefline.practiceSettings.v1";
+
+const BASE_SETTINGS: PracticeSettings = {
   viewMode: "river",
   speed: 1,
   riverZoom: 1,
@@ -64,6 +66,92 @@ const DEFAULT_SETTINGS: PracticeSettings = {
   metronomeEnabled: false,
   showNoteNames: true,
 };
+
+type PersistedPracticeSettings = Pick<
+  PracticeSettings,
+  | "handMode"
+  | "metronomeEnabled"
+  | "riverZoom"
+  | "showMeasureLines"
+  | "showNoteNames"
+  | "speed"
+  | "viewMode"
+  | "volume"
+>;
+
+function storage(): Storage | undefined {
+  try {
+    return globalThis.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function numberSetting(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+}
+
+function booleanSetting(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function viewModeSetting(value: unknown, fallback: ViewMode): ViewMode {
+  return value === "river" || value === "score" ? value : fallback;
+}
+
+function handModeSetting(value: unknown, fallback: HandMode): HandMode {
+  return value === "both" || value === "right" || value === "left" ? value : fallback;
+}
+
+function readPersistedSettings(): Partial<PersistedPracticeSettings> {
+  const item = storage()?.getItem(SETTINGS_STORAGE_KEY);
+  if (!item) {
+    return {};
+  }
+
+  try {
+    const data = JSON.parse(item) as Partial<PersistedPracticeSettings>;
+
+    return {
+      handMode: handModeSetting(data.handMode, BASE_SETTINGS.handMode),
+      metronomeEnabled: booleanSetting(data.metronomeEnabled, BASE_SETTINGS.metronomeEnabled),
+      riverZoom: numberSetting(data.riverZoom, BASE_SETTINGS.riverZoom, 0.6, 2),
+      showMeasureLines: booleanSetting(data.showMeasureLines, BASE_SETTINGS.showMeasureLines),
+      showNoteNames: booleanSetting(data.showNoteNames, BASE_SETTINGS.showNoteNames),
+      speed: numberSetting(data.speed, BASE_SETTINGS.speed, 0.25, 1.25),
+      viewMode: viewModeSetting(data.viewMode, BASE_SETTINGS.viewMode),
+      volume: numberSetting(data.volume, BASE_SETTINGS.volume, 0, 1),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function persistSettings(settings: PracticeSettings): void {
+  try {
+    storage()?.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        handMode: settings.handMode,
+        metronomeEnabled: settings.metronomeEnabled,
+        riverZoom: settings.riverZoom,
+        showMeasureLines: settings.showMeasureLines,
+        showNoteNames: settings.showNoteNames,
+        speed: settings.speed,
+        viewMode: settings.viewMode,
+        volume: settings.volume,
+      } satisfies PersistedPracticeSettings),
+    );
+  } catch {
+    // Storage can be unavailable in private browsing or restricted iframes.
+  }
+}
+
+function initialSettings(): PracticeSettings {
+  return { ...BASE_SETTINGS, ...readPersistedSettings() };
+}
 
 const ACTIVE_EVENT_LOOKBACK_BEATS = 16;
 const measureByNumberCache = new WeakMap<ScoreModel, Map<string, ScoreModel["measures"][number]>>();
@@ -455,7 +543,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
   audioStatus: "idle",
   isPlaying: false,
   positionBeats: 0,
-  settings: DEFAULT_SETTINGS,
+  settings: initialSettings(),
 
   loadXml(xml, sourceName) {
     const score = parseMusicXml(xml);
@@ -606,6 +694,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       playbackEvents,
       positionBeats,
     });
+    persistSettings(nextSettings);
   },
 }));
 
