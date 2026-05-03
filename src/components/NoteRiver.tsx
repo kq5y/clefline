@@ -7,7 +7,7 @@ import {
   usePracticeStore,
   type HandMode,
 } from "../store/practiceStore";
-import type { NoteEvent, ScoreModel } from "../lib/musicxml";
+import type { Hand, NoteEvent, ScoreModel } from "../lib/musicxml";
 
 type NoteRiverProps = {
   score?: ScoreModel;
@@ -18,9 +18,6 @@ type NoteRiverProps = {
 };
 
 const BASE_LOOK_AHEAD_BEATS = 4;
-const RENDER_BUFFER_BEATS = 2.5;
-const REANCHOR_AHEAD_BEATS = 1.45;
-const REANCHOR_BEHIND_BEATS = 0.55;
 const LOOK_BEHIND_BEATS = 0.5;
 const SPAWN_Y = 18;
 const STRIKE_Y = 100;
@@ -30,6 +27,17 @@ const MIN_NOTE_HEIGHT_Y = 1.2;
 const MEASURE_LABEL_HEIGHT_PX = 20;
 const MEASURE_LABEL_EDGE_PADDING_PX = 6;
 
+const NOTE_COLORS: Record<Hand, { black: string; white: string }> = {
+  left: { black: "#1f8093", white: "#52c7e8" },
+  right: { black: "#b85a3a", white: "#f7a56e" },
+  unknown: { black: "#8d6d25", white: "#d4a23c" },
+};
+const GLISSANDO_COLORS: Record<Hand, string> = {
+  left: "#83dcf4",
+  right: "#ffd0ad",
+  unknown: "#ffe099",
+};
+
 type MeasureMarker = {
   index: number;
   number: string;
@@ -37,12 +45,10 @@ type MeasureMarker = {
 };
 
 type VisualNote = {
-  className: string;
   durationBeats: number;
   endBeat: number;
   layout: PianoKeyLayout;
   note: NoteEvent;
-  rx: string;
   startBeat: number;
   x: number;
 };
@@ -78,6 +84,14 @@ function yForBeat(beat: number, positionBeats: number, lookAheadBeats: number): 
   return STRIKE_Y - ((beat - positionBeats) / lookAheadBeats) * STRIKE_Y;
 }
 
+function yUnitToPx(y: number, height: number): number {
+  return ((y - VIEWBOX_TOP) / VIEWBOX_HEIGHT) * height;
+}
+
+function percentToPx(percent: number, width: number): number {
+  return (percent / 100) * width;
+}
+
 function isLongGrace(note: NoteEvent): boolean {
   return note.notations.some((notation) => notation.type === "grace" && notation.value === "long");
 }
@@ -107,7 +121,12 @@ function buildTiedVisualDurationMap(notes: NoteEvent[]): Map<string, number> {
       continue;
     }
 
-    groups.set(note.tieGroupId, [...(groups.get(note.tieGroupId) ?? []), note]);
+    const group = groups.get(note.tieGroupId);
+    if (group) {
+      group.push(note);
+    } else {
+      groups.set(note.tieGroupId, [note]);
+    }
   }
 
   for (const group of groups.values()) {
@@ -182,17 +201,20 @@ function activeLabelNotesAt(
     positionBeats - Math.max(visualScore.maxDurationBeats, 0.1),
   );
   const endIndex = upperBoundByStart(visualScore.notes, positionBeats);
+  const notes: NoteEvent[] = [];
 
-  return visualScore.notes
-    .slice(startIndex, endIndex)
-    .filter(
-      ({ note, startBeat, durationBeats }) =>
-        startBeat <= positionBeats &&
-        startBeat + Math.max(durationBeats, 0.1) > positionBeats &&
-        includeVisual(handMode, note.hand),
-    )
-    .slice(0, 12)
-    .map(({ note }) => note);
+  for (let index = startIndex; index < endIndex && notes.length < 12; index += 1) {
+    const visualNote = visualScore.notes[index];
+    if (
+      visualNote.startBeat <= positionBeats &&
+      visualNote.endBeat > positionBeats &&
+      includeVisual(handMode, visualNote.note.hand)
+    ) {
+      notes.push(visualNote.note);
+    }
+  }
+
+  return notes;
 }
 
 function noteLabelSignature(notes: NoteEvent[]): string {
@@ -204,6 +226,205 @@ function noteLabelSignature(notes: NoteEvent[]): string {
   return signature;
 }
 
+function canvasSize(canvas: HTMLCanvasElement): { height: number; width: number } {
+  return {
+    height: canvas.clientHeight,
+    width: canvas.clientWidth,
+  };
+}
+
+function resizeCanvas(canvas: HTMLCanvasElement): boolean {
+  const { height, width } = canvasSize(canvas);
+  const pixelRatio = window.devicePixelRatio || 1;
+  const nextWidth = Math.max(1, Math.round(width * pixelRatio));
+  const nextHeight = Math.max(1, Math.round(height * pixelRatio));
+  const changed = canvas.width !== nextWidth || canvas.height !== nextHeight;
+
+  if (changed) {
+    canvas.width = nextWidth;
+    canvas.height = nextHeight;
+  }
+
+  const context = canvas.getContext("2d");
+  context?.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+  return changed;
+}
+
+function roundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+): void {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.lineTo(x + width - radius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + radius);
+  context.lineTo(x + width, y + height - radius);
+  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  context.lineTo(x + radius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - radius);
+  context.lineTo(x, y + radius);
+  context.quadraticCurveTo(x, y, x + radius, y);
+  context.closePath();
+}
+
+function drawMeasureLabel(
+  context: CanvasRenderingContext2D,
+  text: string,
+  y: number,
+  canvasHeight: number,
+): void {
+  const centerInset = MEASURE_LABEL_EDGE_PADDING_PX + MEASURE_LABEL_HEIGHT_PX / 2;
+  const center = Math.min(
+    Math.max(centerInset, y),
+    Math.max(centerInset, canvasHeight - centerInset),
+  );
+  const labelTop = Math.round(center - MEASURE_LABEL_HEIGHT_PX / 2);
+  const labelWidth = Math.max(26, Math.ceil(context.measureText(text).width) + 14);
+
+  roundedRect(context, 8, labelTop, labelWidth, MEASURE_LABEL_HEIGHT_PX, 10);
+  context.fillStyle = "rgb(10 13 18 / 74%)";
+  context.fill();
+  context.strokeStyle = "rgb(255 255 255 / 12%)";
+  context.lineWidth = 1;
+  context.stroke();
+  context.fillStyle = "rgb(216 225 235 / 90%)";
+  context.fillText(text, 8 + labelWidth / 2, labelTop + MEASURE_LABEL_HEIGHT_PX / 2 + 0.5);
+}
+
+function drawRiver(
+  canvas: HTMLCanvasElement,
+  visualScore: VisualScore,
+  positionBeats: number,
+  lookAheadBeats: number,
+  handMode: HandMode,
+  showMeasureLines: boolean,
+): void {
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+
+  const { height, width } = canvasSize(canvas);
+  if (height <= 0 || width <= 0) {
+    return;
+  }
+
+  context.clearRect(0, 0, width, height);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  const windowStart = positionBeats - LOOK_BEHIND_BEATS;
+  const windowEnd = positionBeats + lookAheadBeats;
+
+  if (showMeasureLines) {
+    const measureStartIndex = lowerBoundByStart(visualScore.measures, windowStart);
+    const measureEndIndex = upperBoundByStart(visualScore.measures, windowEnd);
+    context.font = "600 12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+
+    for (let index = measureStartIndex; index < measureEndIndex; index += 1) {
+      const measure = visualScore.measures[index];
+      const y = yUnitToPx(yForBeat(measure.startBeat, positionBeats, lookAheadBeats), height);
+      context.globalAlpha = 1;
+      context.beginPath();
+      context.moveTo(0, y);
+      context.lineTo(width, y);
+      context.strokeStyle = "rgb(255 255 255 / 22%)";
+      context.lineWidth = 1;
+      context.stroke();
+      drawMeasureLabel(context, measure.number, y, height);
+    }
+  }
+
+  for (const segment of visualScore.glissandoSegments) {
+    if (segment.endBeat < windowStart || segment.startBeat > windowEnd) {
+      continue;
+    }
+
+    const selected = includeVisual(handMode, segment.hand);
+    context.globalAlpha = selected ? 1 : 0.18;
+    context.beginPath();
+    context.setLineDash([4, 3]);
+    context.moveTo(
+      percentToPx(segment.startX, width),
+      yUnitToPx(yForBeat(segment.startBeat, positionBeats, lookAheadBeats), height),
+    );
+    context.lineTo(
+      percentToPx(segment.endX, width),
+      yUnitToPx(yForBeat(segment.endBeat, positionBeats, lookAheadBeats), height),
+    );
+    context.strokeStyle = GLISSANDO_COLORS[segment.hand as Hand] ?? GLISSANDO_COLORS.unknown;
+    context.lineWidth = 2.6;
+    context.stroke();
+    context.setLineDash([]);
+  }
+
+  const startIndex = lowerBoundByStart(
+    visualScore.notes,
+    windowStart - visualScore.maxDurationBeats,
+  );
+  const endIndex = upperBoundByStart(visualScore.notes, windowEnd);
+
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const visualNote = visualScore.notes[index];
+    if (visualNote.endBeat < windowStart) {
+      continue;
+    }
+
+    const { layout, note } = visualNote;
+    const startY = yUnitToPx(yForBeat(visualNote.startBeat, positionBeats, lookAheadBeats), height);
+    const endY = yUnitToPx(
+      yForBeat(visualNote.startBeat + visualNote.durationBeats, positionBeats, lookAheadBeats),
+      height,
+    );
+    const top = Math.min(startY, endY);
+    const bottom = Math.max(startY, endY);
+    const noteHeight = Math.max((MIN_NOTE_HEIGHT_Y / VIEWBOX_HEIGHT) * height, bottom - top);
+    const x = percentToPx(visualNote.x, width);
+    const noteWidth = percentToPx(layout.noteWidthPercent, width);
+    const radius = layout.black ? 3 : 5;
+    const colors = NOTE_COLORS[note.hand];
+    const selected = includeVisual(handMode, note.hand);
+
+    context.globalAlpha = selected ? 1 : 0.18;
+    roundedRect(context, x, top, noteWidth, noteHeight, radius);
+    context.fillStyle = layout.black ? colors.black : colors.white;
+    context.fill();
+    context.strokeStyle = "#060910";
+    context.lineWidth = 1.45;
+    context.stroke();
+
+    context.beginPath();
+    context.moveTo(x, startY);
+    context.lineTo(x + noteWidth, startY);
+    context.strokeStyle = "#05070c";
+    context.lineWidth = 4.6;
+    context.stroke();
+
+    context.globalAlpha = selected ? 0.78 : 0.14;
+    context.beginPath();
+    context.moveTo(x, endY);
+    context.lineTo(x + noteWidth, endY);
+    context.lineWidth = 3.2;
+    context.stroke();
+  }
+
+  context.globalAlpha = 1;
+  const strikeY = yUnitToPx(STRIKE_Y, height);
+  context.beginPath();
+  context.moveTo(0, strikeY);
+  context.lineTo(width, strikeY);
+  context.strokeStyle = "rgb(255 255 255 / 62%)";
+  context.lineWidth = 2;
+  context.stroke();
+}
+
 export const NoteRiver = memo(function NoteRiver({
   score,
   handMode,
@@ -212,20 +433,14 @@ export const NoteRiver = memo(function NoteRiver({
   showNoteNames,
 }: NoteRiverProps) {
   const lookAheadBeats = BASE_LOOK_AHEAD_BEATS / Math.max(0.5, riverZoom);
-  const [windowBeat, setWindowBeat] = useState(currentDisplayBeat);
   const [activeLabels, setActiveLabels] = useState<NoteEvent[]>([]);
-  const riverRef = useRef<HTMLDivElement | null>(null);
-  const motionGroupRef = useRef<SVGGElement | null>(null);
-  const windowBeatRef = useRef(windowBeat);
-  const pendingWindowBeatRef = useRef<number | undefined>(undefined);
-  const latestPositionBeatRef = useRef(windowBeat);
-  const lookAheadBeatsRef = useRef(lookAheadBeats);
-  const riverHeightRef = useRef(0);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const visualScoreRef = useRef<VisualScore>(EMPTY_VISUAL_SCORE);
-  const measureLinesRef = useRef<MeasureMarker[]>([]);
-  const measureLabelRefs = useRef(new Map<number, HTMLSpanElement>());
   const handModeRef = useRef(handMode);
+  const showMeasureLinesRef = useRef(showMeasureLines);
   const showNoteNamesRef = useRef(showNoteNames);
+  const lookAheadBeatsRef = useRef(lookAheadBeats);
+  const latestPositionBeatRef = useRef(currentDisplayBeat());
   const labelSignatureRef = useRef("");
   const visualScore = useMemo<VisualScore>(() => {
     if (!score) {
@@ -243,12 +458,10 @@ export const NoteRiver = memo(function NoteRiver({
         maxDurationBeats = Math.max(maxDurationBeats, durationBeats);
 
         return {
-          className: `river-note ${note.hand} ${layout.black ? "black-note" : "white-note"}`,
           durationBeats,
           endBeat: startBeat + durationBeats,
           layout,
           note,
-          rx: layout.black ? "0.16" : "0.22",
           startBeat,
           x: layout.centerPercent - layout.noteWidthPercent / 2,
         };
@@ -276,150 +489,87 @@ export const NoteRiver = memo(function NoteRiver({
 
     return { glissandoSegments, maxDurationBeats, measures, notes };
   }, [score]);
+
   visualScoreRef.current = visualScore;
   handModeRef.current = handMode;
+  showMeasureLinesRef.current = showMeasureLines;
   showNoteNamesRef.current = showNoteNames;
   lookAheadBeatsRef.current = lookAheadBeats;
-  const notes = useMemo(() => {
-    const windowStart = windowBeat - LOOK_BEHIND_BEATS - RENDER_BUFFER_BEATS;
-    const windowEnd = windowBeat + lookAheadBeats + RENDER_BUFFER_BEATS;
-    const startIndex = lowerBoundByStart(
-      visualScore.notes,
-      windowStart - visualScore.maxDurationBeats,
-    );
-    const endIndex = upperBoundByStart(visualScore.notes, windowEnd);
 
-    return visualScore.notes
-      .slice(startIndex, endIndex)
-      .filter((note) => note.endBeat >= windowStart);
-  }, [lookAheadBeats, visualScore, windowBeat]);
-  const measureLines = useMemo<MeasureMarker[]>(() => {
-    if (visualScore.measures.length === 0) {
-      return [];
-    }
-
-    const startIndex = lowerBoundByStart(
-      visualScore.measures,
-      windowBeat - LOOK_BEHIND_BEATS - RENDER_BUFFER_BEATS,
-    );
-    const endIndex = upperBoundByStart(
-      visualScore.measures,
-      windowBeat + lookAheadBeats + RENDER_BUFFER_BEATS,
-    );
-
-    return visualScore.measures.slice(startIndex, endIndex);
-  }, [lookAheadBeats, visualScore, windowBeat]);
-  measureLinesRef.current = measureLines;
-  const glissandoSegments = useMemo(
-    () =>
-      visualScore.glissandoSegments.filter(
-        (segment) =>
-          segment.endBeat >= windowBeat - LOOK_BEHIND_BEATS - RENDER_BUFFER_BEATS &&
-          segment.startBeat <= windowBeat + lookAheadBeats + RENDER_BUFFER_BEATS,
-      ),
-    [lookAheadBeats, visualScore, windowBeat],
-  );
-  const positionMeasureLabels = useCallback((positionBeats: number) => {
-    const riverHeight = riverHeightRef.current || riverRef.current?.clientHeight || 0;
-    if (riverHeight <= 0) {
+  const paint = useCallback((positionBeats: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
       return;
     }
 
-    const centerInset = MEASURE_LABEL_EDGE_PADDING_PX + MEASURE_LABEL_HEIGHT_PX / 2;
-    const minCenter = centerInset;
-    const maxCenter = Math.max(minCenter, riverHeight - centerInset);
-    for (const measure of measureLinesRef.current) {
-      const label = measureLabelRefs.current.get(measure.index);
-      if (!label) {
-        continue;
-      }
+    drawRiver(
+      canvas,
+      visualScoreRef.current,
+      positionBeats,
+      lookAheadBeatsRef.current,
+      handModeRef.current,
+      showMeasureLinesRef.current,
+    );
+  }, []);
 
-      const y = yForBeat(measure.startBeat, positionBeats, lookAheadBeatsRef.current);
-      const centerPx = ((y - VIEWBOX_TOP) / VIEWBOX_HEIGHT) * riverHeight;
-      const clampedCenterPx = Math.min(maxCenter, Math.max(minCenter, centerPx));
-      label.style.top = `${Math.round(clampedCenterPx - MEASURE_LABEL_HEIGHT_PX / 2)}px`;
+  const updateActiveLabels = useCallback((positionBeats: number) => {
+    if (!showNoteNamesRef.current) {
+      return;
+    }
+
+    const nextLabels = activeLabelNotesAt(
+      visualScoreRef.current,
+      positionBeats,
+      handModeRef.current,
+    );
+    const nextSignature = noteLabelSignature(nextLabels);
+    if (nextSignature !== labelSignatureRef.current) {
+      labelSignatureRef.current = nextSignature;
+      setActiveLabels(nextLabels);
     }
   }, []);
-  const updateMotion = useCallback(
-    (positionBeats: number) => {
-      const deltaY =
-        ((positionBeats - windowBeatRef.current) / lookAheadBeatsRef.current) * STRIKE_Y;
-      motionGroupRef.current?.setAttribute("transform", `translate(0 ${deltaY.toFixed(3)})`);
-      positionMeasureLabels(positionBeats);
-    },
-    [positionMeasureLabels],
-  );
 
   useLayoutEffect(() => {
-    const element = riverRef.current;
-    if (!element) {
-      return;
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return undefined;
     }
 
-    const updateHeight = () => {
-      riverHeightRef.current = element.clientHeight;
-      positionMeasureLabels(latestPositionBeatRef.current);
+    const updateCanvasSize = () => {
+      resizeCanvas(canvas);
+      paint(latestPositionBeatRef.current);
     };
-    updateHeight();
+    updateCanvasSize();
 
     if (typeof ResizeObserver === "undefined") {
-      return;
+      return undefined;
     }
 
-    const observer = new ResizeObserver(updateHeight);
-    observer.observe(element);
+    const observer = new ResizeObserver(updateCanvasSize);
+    observer.observe(canvas);
 
     return () => observer.disconnect();
-  }, [positionMeasureLabels]);
+  }, [paint]);
 
   useEffect(() => {
     const nextBeat = currentDisplayBeat();
     latestPositionBeatRef.current = nextBeat;
-    windowBeatRef.current = nextBeat;
-    pendingWindowBeatRef.current = undefined;
-    setWindowBeat(nextBeat);
-    updateMotion(nextBeat);
-  }, [score, updateMotion]);
+    labelSignatureRef.current = "";
+    paint(nextBeat);
+    updateActiveLabels(nextBeat);
+  }, [paint, score, updateActiveLabels]);
 
-  useLayoutEffect(() => {
-    windowBeatRef.current = windowBeat;
-    pendingWindowBeatRef.current = undefined;
-    updateMotion(latestPositionBeatRef.current);
-  }, [updateMotion, windowBeat]);
-
-  useLayoutEffect(() => {
-    positionMeasureLabels(latestPositionBeatRef.current);
-  }, [measureLines, positionMeasureLabels]);
+  useEffect(() => {
+    paint(latestPositionBeatRef.current);
+    updateActiveLabels(latestPositionBeatRef.current);
+  }, [handMode, lookAheadBeats, paint, showMeasureLines, updateActiveLabels, visualScore]);
 
   useEffect(() => {
     const update = () => {
       const positionBeats = currentDisplayBeat();
       latestPositionBeatRef.current = positionBeats;
-      const currentWindowBeat = windowBeatRef.current;
-      if (
-        pendingWindowBeatRef.current === undefined &&
-        (positionBeats < currentWindowBeat - REANCHOR_BEHIND_BEATS ||
-          positionBeats > currentWindowBeat + REANCHOR_AHEAD_BEATS)
-      ) {
-        pendingWindowBeatRef.current = positionBeats;
-        setWindowBeat(positionBeats);
-      }
-
-      updateMotion(positionBeats);
-      if (!showNoteNamesRef.current) {
-        return;
-      }
-
-      const nextLabels = activeLabelNotesAt(
-        visualScoreRef.current,
-        positionBeats,
-        handModeRef.current,
-      );
-      const nextSignature = noteLabelSignature(nextLabels);
-      if (nextSignature !== labelSignatureRef.current) {
-        labelSignatureRef.current = nextSignature;
-        setActiveLabels(nextLabels);
-      }
+      paint(positionBeats);
+      updateActiveLabels(positionBeats);
     };
 
     update();
@@ -432,7 +582,7 @@ export const NoteRiver = memo(function NoteRiver({
         update();
       }
     });
-  }, [updateMotion]);
+  }, [paint, updateActiveLabels]);
 
   useEffect(() => {
     if (!showNoteNames) {
@@ -441,10 +591,8 @@ export const NoteRiver = memo(function NoteRiver({
       return;
     }
 
-    const nextLabels = activeLabelNotesAt(visualScore, currentDisplayBeat(), handMode);
-    labelSignatureRef.current = noteLabelSignature(nextLabels);
-    setActiveLabels(nextLabels);
-  }, [handMode, showNoteNames, visualScore]);
+    updateActiveLabels(latestPositionBeatRef.current);
+  }, [showNoteNames, updateActiveLabels]);
 
   if (!score) {
     return (
@@ -455,96 +603,8 @@ export const NoteRiver = memo(function NoteRiver({
   }
 
   return (
-    <div className="note-river" ref={riverRef} aria-label="Falling notes">
-      <svg viewBox={`0 ${VIEWBOX_TOP} 100 ${VIEWBOX_HEIGHT}`} preserveAspectRatio="none">
-        <g className="river-motion-layer" ref={motionGroupRef}>
-          {showMeasureLines
-            ? measureLines.map((measure) => {
-                const y = yForBeat(measure.startBeat, windowBeat, lookAheadBeats);
-
-                return (
-                  <g className="measure-marker" key={measure.index}>
-                    <line className="measure-line" x1="0" x2="100" y1={y} y2={y} />
-                  </g>
-                );
-              })
-            : null}
-          {glissandoSegments.map((segment) => {
-            const startY = yForBeat(segment.startBeat, windowBeat, lookAheadBeats);
-            const endY = yForBeat(segment.endBeat, windowBeat, lookAheadBeats);
-            const selected = includeVisual(handMode, segment.hand);
-
-            return (
-              <line
-                className={`glissando-line ${segment.hand}`}
-                key={segment.id}
-                opacity={selected ? 1 : 0.18}
-                x1={segment.startX}
-                x2={segment.endX}
-                y1={startY}
-                y2={endY}
-              />
-            );
-          })}
-          {notes.map(({ className, durationBeats, layout, note, rx, startBeat, x }) => {
-            const startY = yForBeat(startBeat, windowBeat, lookAheadBeats);
-            const endY = yForBeat(startBeat + durationBeats, windowBeat, lookAheadBeats);
-            const top = Math.min(startY, endY);
-            const bottom = Math.max(startY, endY);
-            const height = Math.max(MIN_NOTE_HEIGHT_Y, bottom - top);
-            const releaseY = endY;
-            const selected = includeVisual(handMode, note.hand);
-            return (
-              <g className="river-note-group" key={note.id} opacity={selected ? 1 : 0.18}>
-                <rect
-                  className={className}
-                  data-midi={note.midi}
-                  data-pitch={note.pitchName}
-                  x={x}
-                  y={top}
-                  width={layout.noteWidthPercent}
-                  height={height}
-                  rx={rx}
-                />
-                <line
-                  className="note-release"
-                  x1={x}
-                  x2={x + layout.noteWidthPercent}
-                  y1={releaseY}
-                  y2={releaseY}
-                />
-                <line
-                  className="note-attack"
-                  x1={x}
-                  x2={x + layout.noteWidthPercent}
-                  y1={startY}
-                  y2={startY}
-                />
-              </g>
-            );
-          })}
-        </g>
-        <line className="strike-line" x1="0" x2="100" y1={STRIKE_Y} y2={STRIKE_Y} />
-      </svg>
-      {showMeasureLines ? (
-        <div className="measure-label-layer" aria-hidden="true">
-          {measureLines.map((measure) => (
-            <span
-              className="measure-label"
-              key={measure.index}
-              ref={(element) => {
-                if (element) {
-                  measureLabelRefs.current.set(measure.index, element);
-                  return;
-                }
-                measureLabelRefs.current.delete(measure.index);
-              }}
-            >
-              {measure.number}
-            </span>
-          ))}
-        </div>
-      ) : null}
+    <div className="note-river" aria-label="Falling notes">
+      <canvas aria-hidden="true" ref={canvasRef} />
       {showNoteNames ? (
         <div className="current-readout">
           {activeLabels.map((note) => (

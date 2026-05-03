@@ -12,7 +12,7 @@ test("loads the public sample and switches between river and score views", async
   await page.getByRole("button", { name: /Sample score/ }).click();
   await expect(page.getByRole("heading", { name: "Minuet in G Major" })).toBeVisible();
   await expect(page.getByLabel("Falling notes")).toBeVisible();
-  await expect(page.locator(".measure-label").first()).toBeVisible();
+  await expect(page.locator(".note-river canvas")).toBeVisible();
   await page.getByRole("button", { name: /Info/ }).click();
   await expect(page.getByText("bach-minuet.musicxml")).toBeVisible();
   await expect(page.getByText("32 measures")).toBeVisible();
@@ -25,6 +25,7 @@ test("loads the public sample and switches between river and score views", async
 
   await page.getByRole("button", { name: "River", exact: true }).click();
   await expect(page.getByLabel("Falling notes")).toBeVisible();
+  await expect(page.locator(".note-river canvas")).toBeVisible();
 });
 
 test("accepts MusicXML by drag and drop", async ({ page }) => {

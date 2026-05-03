@@ -127,6 +127,7 @@
   overflow: hidden;
 }
 
+.note-river canvas,
 .note-river svg {
   width: 100%;
   height: 100%;
