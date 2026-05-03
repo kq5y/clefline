@@ -120,7 +120,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    preloadOsmd();
+    return scheduleIdle(preloadOsmd);
   }, []);
 
   useEffect(() => {

@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  memo,
   useCallback,
   useEffect,
   useRef,
@@ -35,7 +36,7 @@ import type { PlaybackEvent } from "../lib/musicxml";
 
 const EMPTY_PLAYBACK_EVENTS: PlaybackEvent[] = [];
 
-export function Controls() {
+export const Controls = memo(function Controls() {
   const [openPanel, setOpenPanel] = useState<"info" | "practice" | undefined>();
   const [audioLoading, setAudioLoading] = useState(false);
   const repeatDelayRef = useRef<number | undefined>(undefined);
@@ -394,4 +395,4 @@ export function Controls() {
       </div>
     </>
   );
-}
+});

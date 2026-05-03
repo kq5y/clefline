@@ -1,5 +1,10 @@
 import { memo, useMemo } from "react";
-import { initialTempo, sourceBeatAt } from "../store/practiceStore";
+import {
+  activePlaybackEventsAt,
+  initialTempo,
+  latestPlaybackEventAt,
+  sourceBeatAt,
+} from "../store/practiceStore";
 import type { DirectionEvent, PlaybackEvent, ScoreModel } from "../lib/musicxml";
 
 type PlaybackMetadataProps = {
@@ -55,28 +60,6 @@ function currentExpression(score: ScoreModel, positionBeats: number): string | u
   return text.includes("diminuendo") ? "Dim." : text.includes("crescendo") ? "Cresc." : text;
 }
 
-function activeEvents(playbackEvents: PlaybackEvent[], positionBeats: number): PlaybackEvent[] {
-  const active: PlaybackEvent[] = [];
-  for (const event of playbackEvents) {
-    if (event.absoluteBeat > positionBeats) {
-      break;
-    }
-    if (event.absoluteBeat + Math.max(event.durationBeats, 0.1) <= positionBeats) {
-      continue;
-    }
-    active.push(event);
-  }
-
-  return active;
-}
-
-function latestEvent(
-  playbackEvents: PlaybackEvent[],
-  positionBeats: number,
-): PlaybackEvent | undefined {
-  return playbackEvents.findLast((event) => event.absoluteBeat <= positionBeats);
-}
-
 export const PlaybackMetadata = memo(function PlaybackMetadata({
   score,
   playbackEvents,
@@ -88,8 +71,9 @@ export const PlaybackMetadata = memo(function PlaybackMetadata({
     }
 
     const sourcePositionBeats = sourceBeatAt(playbackEvents, positionBeats);
-    const events = activeEvents(playbackEvents, positionBeats);
-    const eventForDisplay = events.length > 0 ? events : latestEvent(playbackEvents, positionBeats);
+    const events = activePlaybackEventsAt(playbackEvents, positionBeats);
+    const eventForDisplay =
+      events.length > 0 ? events : latestPlaybackEventAt(playbackEvents, positionBeats);
     const displayEvents = Array.isArray(eventForDisplay)
       ? eventForDisplay
       : eventForDisplay

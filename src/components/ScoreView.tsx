@@ -53,9 +53,21 @@ function currentMeasure(score: ScoreModel, positionBeats: number): string {
     return "0";
   }
 
-  const measure = score.measures.findLast((item) => item.startBeat <= positionBeats);
+  let low = 0;
+  let high = score.measures.length - 1;
+  let match = -1;
 
-  return measure?.number ?? score.measures[0]?.number ?? "1";
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (score.measures[middle].startBeat <= positionBeats) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  return score.measures[match]?.number ?? score.measures[0]?.number ?? "1";
 }
 
 function visibleCursorElement(view: HTMLDivElement): HTMLElement | undefined {
@@ -400,6 +412,9 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   const scorePositionsRef = useRef<ScorePosition[]>([]);
   const highlightedNotesRef = useRef<ColorableGraphicalNote[]>([]);
   const highlightedIndexRef = useRef(-1);
+  const latestMeasureRef = useRef<string | undefined>(undefined);
+  const pendingPositionRef = useRef<number | undefined>(undefined);
+  const animationFrameRef = useRef<number | undefined>(undefined);
   const [error, setError] = useState<string | undefined>();
 
   const updateScorePosition = useCallback(
@@ -410,7 +425,11 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       }
 
       if (measureRef.current) {
-        measureRef.current.textContent = `Measure ${currentMeasure(score, positionBeats)}`;
+        const nextMeasure = currentMeasure(score, positionBeats);
+        if (nextMeasure !== latestMeasureRef.current) {
+          latestMeasureRef.current = nextMeasure;
+          measureRef.current.textContent = `Measure ${nextMeasure}`;
+        }
       }
 
       const scorePositions = scorePositionsRef.current;
@@ -439,6 +458,24 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     },
     [score],
   );
+  const scheduleScorePosition = useCallback(
+    (positionBeats: number) => {
+      pendingPositionRef.current = positionBeats;
+      if (animationFrameRef.current !== undefined) {
+        return;
+      }
+
+      animationFrameRef.current = window.requestAnimationFrame(() => {
+        animationFrameRef.current = undefined;
+        const nextPosition = pendingPositionRef.current;
+        pendingPositionRef.current = undefined;
+        if (nextPosition !== undefined) {
+          updateScorePosition(nextPosition);
+        }
+      });
+    },
+    [updateScorePosition],
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -453,6 +490,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     glissandoOverlay?.replaceChildren();
     osmdRef.current = null;
     scorePositionsRef.current = [];
+    latestMeasureRef.current = undefined;
     setError(undefined);
 
     void loadOsmd()
@@ -521,9 +559,15 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     return () => {
       cancelled = true;
       cancelPositionBuild?.();
+      if (animationFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
+      }
+      pendingPositionRef.current = undefined;
       colorScoreNotes(highlightedNotesRef.current, "#000000");
       highlightedNotesRef.current = [];
       highlightedIndexRef.current = -1;
+      latestMeasureRef.current = undefined;
       scorePositionsRef.current = [];
       glissandoOverlay?.replaceChildren();
       osmdRef.current?.clear();
@@ -538,13 +582,22 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     }
 
     const currentState = usePracticeStore.getState();
-    updateScorePosition(sourceBeatAt(currentState.playbackEvents, currentState.positionBeats));
-    return usePracticeStore.subscribe((nextState, previousState) => {
+    scheduleScorePosition(sourceBeatAt(currentState.playbackEvents, currentState.positionBeats));
+    const unsubscribe = usePracticeStore.subscribe((nextState, previousState) => {
       if (nextState.positionBeats !== previousState.positionBeats) {
-        updateScorePosition(sourceBeatAt(nextState.playbackEvents, nextState.positionBeats));
+        scheduleScorePosition(sourceBeatAt(nextState.playbackEvents, nextState.positionBeats));
       }
     });
-  }, [active, score, updateScorePosition]);
+
+    return () => {
+      unsubscribe();
+      if (animationFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
+      }
+      pendingPositionRef.current = undefined;
+    };
+  }, [active, scheduleScorePosition, score]);
 
   if (!score) {
     return (

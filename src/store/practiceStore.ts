@@ -58,6 +58,12 @@ const DEFAULT_SETTINGS: PracticeSettings = {
   showNoteNames: true,
 };
 
+const ACTIVE_EVENT_LOOKBACK_BEATS = 16;
+const playbackStatsCache = new WeakMap<
+  PlaybackEvent[],
+  { endBeat: number; maxDurationBeats: number }
+>();
+
 function eventsFor(score: ScoreModel, handMode: HandMode): PlaybackEvent[] {
   return buildPlaybackEvents(score, { handMode });
 }
@@ -102,22 +108,33 @@ export function playbackEndBeat(score: ScoreModel | undefined, events: PlaybackE
     return 0;
   }
 
-  const eventEnd = events.reduce(
-    (endBeat, event) => Math.max(endBeat, event.absoluteBeat + event.durationBeats),
-    0,
-  );
-
-  return Math.max(0, eventEnd || score.totalBeats);
+  return Math.max(0, playbackStats(events).endBeat || score.totalBeats);
 }
 
-export function sourceBeatAt(events: PlaybackEvent[], positionBeats: number): number {
-  if (positionBeats < 0 || events.length === 0) {
-    return positionBeats;
+function playbackStats(events: PlaybackEvent[]): { endBeat: number; maxDurationBeats: number } {
+  const cached = playbackStatsCache.get(events);
+  if (cached) {
+    return cached;
   }
 
+  let endBeat = 0;
+  let maxDurationBeats = 0;
+  for (const event of events) {
+    endBeat = Math.max(endBeat, event.absoluteBeat + event.durationBeats);
+    maxDurationBeats = Math.max(maxDurationBeats, event.durationBeats);
+  }
+
+  const stats = { endBeat, maxDurationBeats };
+  playbackStatsCache.set(events, stats);
+
+  return stats;
+}
+
+function eventIndexAtOrBefore(events: PlaybackEvent[], positionBeats: number): number {
   let low = 0;
   let high = events.length - 1;
   let match = -1;
+
   while (low <= high) {
     const middle = Math.floor((low + high) / 2);
     if (events[middle].absoluteBeat <= positionBeats) {
@@ -128,6 +145,15 @@ export function sourceBeatAt(events: PlaybackEvent[], positionBeats: number): nu
     }
   }
 
+  return match;
+}
+
+export function sourceBeatAt(events: PlaybackEvent[], positionBeats: number): number {
+  if (positionBeats < 0 || events.length === 0) {
+    return positionBeats;
+  }
+
+  const match = eventIndexAtOrBefore(events, positionBeats);
   if (match < 0) {
     return positionBeats;
   }
@@ -158,15 +184,44 @@ function clampPosition(
   return Math.max(lower, Math.min(positionBeats, upper));
 }
 
-export function activeMidiAt(events: PlaybackEvent[], positionBeats: number): number[] {
-  const active = new Set<number>();
-  for (const event of events) {
-    if (event.absoluteBeat > positionBeats) {
+export function activePlaybackEventsAt(
+  events: PlaybackEvent[],
+  positionBeats: number,
+): PlaybackEvent[] {
+  const active: PlaybackEvent[] = [];
+  const startIndex = eventIndexAtOrBefore(events, positionBeats);
+  if (startIndex < 0) {
+    return active;
+  }
+
+  const lowerBound =
+    positionBeats - Math.max(ACTIVE_EVENT_LOOKBACK_BEATS, playbackStats(events).maxDurationBeats);
+  for (let index = startIndex; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.absoluteBeat < lowerBound) {
       break;
     }
     if (event.absoluteBeat + Math.max(event.durationBeats, 0.1) <= positionBeats) {
       continue;
     }
+    active.push(event);
+  }
+
+  return active.toReversed();
+}
+
+export function latestPlaybackEventAt(
+  events: PlaybackEvent[],
+  positionBeats: number,
+): PlaybackEvent | undefined {
+  const index = eventIndexAtOrBefore(events, positionBeats);
+
+  return index >= 0 ? events[index] : undefined;
+}
+
+export function activeMidiAt(events: PlaybackEvent[], positionBeats: number): number[] {
+  const active = new Set<number>();
+  for (const event of activePlaybackEventsAt(events, positionBeats)) {
     for (const note of event.notes) {
       active.add(note.midi);
     }
@@ -177,13 +232,7 @@ export function activeMidiAt(events: PlaybackEvent[], positionBeats: number): nu
 
 export function activeNotesAt(events: PlaybackEvent[], positionBeats: number) {
   const active: Array<{ midi: number; hand: Hand; pitchName: string }> = [];
-  for (const event of events) {
-    if (event.absoluteBeat > positionBeats) {
-      break;
-    }
-    if (event.absoluteBeat + Math.max(event.durationBeats, 0.1) <= positionBeats) {
-      continue;
-    }
+  for (const event of activePlaybackEventsAt(events, positionBeats)) {
     for (const note of event.notes) {
       active.push({
         midi: note.midi,

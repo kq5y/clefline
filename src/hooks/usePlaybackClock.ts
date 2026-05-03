@@ -48,10 +48,13 @@ export function usePlaybackClock(): void {
       if (bounds && nextPosition >= bounds.endBeat) {
         nextPosition = bounds.startBeat;
         shouldCommit = true;
-      } else if (nextPosition >= playbackEndBeat(currentScore, state.playbackEvents)) {
-        nextPosition = playbackEndBeat(currentScore, state.playbackEvents);
-        shouldStop = true;
-        shouldCommit = true;
+      } else {
+        const endBeat = playbackEndBeat(currentScore, state.playbackEvents);
+        if (nextPosition >= endBeat) {
+          nextPosition = endBeat;
+          shouldStop = true;
+          shouldCommit = true;
+        }
       }
 
       positionRef.current = nextPosition;

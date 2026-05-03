@@ -23,6 +23,25 @@ type MeasureMarker = {
   startBeat: number;
 };
 
+type VisualNote = {
+  note: NoteEvent;
+  startBeat: number;
+  durationBeats: number;
+  endBeat: number;
+};
+
+type VisualScore = {
+  maxDurationBeats: number;
+  measures: MeasureMarker[];
+  notes: VisualNote[];
+};
+
+const EMPTY_VISUAL_SCORE: VisualScore = {
+  maxDurationBeats: 0,
+  measures: [],
+  notes: [],
+};
+
 function includeVisual(handMode: HandMode, hand: string): boolean {
   return handMode === "both" || hand === handMode;
 }
@@ -55,6 +74,38 @@ function visualDurationBeats(note: NoteEvent): number {
   return isLongGrace(note) ? Math.max(0.24, Math.min(note.durationBeats || 0.28, 0.45)) : 0.14;
 }
 
+function lowerBoundByStart<T extends { startBeat: number }>(items: T[], beat: number): number {
+  let low = 0;
+  let high = items.length;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (items[middle].startBeat < beat) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  return low;
+}
+
+function upperBoundByStart<T extends { startBeat: number }>(items: T[], beat: number): number {
+  let low = 0;
+  let high = items.length;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (items[middle].startBeat <= beat) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  return low;
+}
+
 export const NoteRiver = memo(function NoteRiver({
   score,
   positionBeats,
@@ -64,31 +115,58 @@ export const NoteRiver = memo(function NoteRiver({
   showNoteNames,
 }: NoteRiverProps) {
   const lookAheadBeats = BASE_LOOK_AHEAD_BEATS / Math.max(0.5, riverZoom);
-  const notes = useMemo(
-    () =>
-      score?.notes.filter((note) => {
-        const startBeat = visualStartBeat(note);
-
-        return (
-          startBeat + visualDurationBeats(note) >= positionBeats - LOOK_BEHIND_BEATS &&
-          startBeat <= positionBeats + lookAheadBeats
-        );
-      }) ?? [],
-    [lookAheadBeats, positionBeats, score],
-  );
-  const measureLines = useMemo<MeasureMarker[]>(() => {
+  const visualScore = useMemo<VisualScore>(() => {
     if (!score) {
+      return EMPTY_VISUAL_SCORE;
+    }
+
+    let maxDurationBeats = 0;
+    const notes = score.notes
+      .map((note) => {
+        const startBeat = visualStartBeat(note);
+        const durationBeats = visualDurationBeats(note);
+        maxDurationBeats = Math.max(maxDurationBeats, durationBeats);
+
+        return {
+          note,
+          startBeat,
+          durationBeats,
+          endBeat: startBeat + durationBeats,
+        };
+      })
+      .toSorted(
+        (first, second) => first.startBeat - second.startBeat || first.note.midi - second.note.midi,
+      );
+    const measures = [
+      { index: -1, number: "0", startBeat: minimumPositionBeats(score) },
+      ...score.measures,
+    ].toSorted((first, second) => first.startBeat - second.startBeat);
+
+    return { maxDurationBeats, measures, notes };
+  }, [score]);
+  const notes = useMemo(() => {
+    const windowStart = positionBeats - LOOK_BEHIND_BEATS;
+    const windowEnd = positionBeats + lookAheadBeats;
+    const startIndex = lowerBoundByStart(
+      visualScore.notes,
+      windowStart - visualScore.maxDurationBeats,
+    );
+    const endIndex = upperBoundByStart(visualScore.notes, windowEnd);
+
+    return visualScore.notes
+      .slice(startIndex, endIndex)
+      .filter((note) => note.endBeat >= windowStart);
+  }, [lookAheadBeats, positionBeats, visualScore]);
+  const measureLines = useMemo<MeasureMarker[]>(() => {
+    if (visualScore.measures.length === 0) {
       return [];
     }
 
-    return [
-      { index: -1, number: "0", startBeat: minimumPositionBeats(score) },
-      ...score.measures,
-    ].filter(
-      (measure) =>
-        measure.startBeat >= positionBeats && measure.startBeat <= positionBeats + lookAheadBeats,
-    );
-  }, [lookAheadBeats, positionBeats, score]);
+    const startIndex = lowerBoundByStart(visualScore.measures, positionBeats);
+    const endIndex = upperBoundByStart(visualScore.measures, positionBeats + lookAheadBeats);
+
+    return visualScore.measures.slice(startIndex, endIndex);
+  }, [lookAheadBeats, positionBeats, visualScore]);
   const allGlissandoSegments = useMemo(() => buildGlissandoSegments(score?.notes ?? []), [score]);
   const glissandoSegments = useMemo(
     () =>
@@ -99,18 +177,24 @@ export const NoteRiver = memo(function NoteRiver({
       ),
     [allGlissandoSegments, lookAheadBeats, positionBeats],
   );
-  const activeLabels = useMemo(
-    () =>
-      score?.notes
-        .filter(
-          (note) =>
-            visualStartBeat(note) <= positionBeats &&
-            visualStartBeat(note) + Math.max(visualDurationBeats(note), 0.1) > positionBeats &&
-            includeVisual(handMode, note.hand),
-        )
-        .slice(0, 12) ?? [],
-    [handMode, positionBeats, score],
-  );
+  const activeLabels = useMemo(() => {
+    const startIndex = lowerBoundByStart(
+      visualScore.notes,
+      positionBeats - Math.max(visualScore.maxDurationBeats, 0.1),
+    );
+    const endIndex = upperBoundByStart(visualScore.notes, positionBeats);
+
+    return visualScore.notes
+      .slice(startIndex, endIndex)
+      .filter(
+        ({ note, startBeat, durationBeats }) =>
+          startBeat <= positionBeats &&
+          startBeat + Math.max(durationBeats, 0.1) > positionBeats &&
+          includeVisual(handMode, note.hand),
+      )
+      .slice(0, 12)
+      .map(({ note }) => note);
+  }, [handMode, positionBeats, visualScore]);
 
   if (!score) {
     return (
@@ -158,9 +242,7 @@ export const NoteRiver = memo(function NoteRiver({
             />
           );
         })}
-        {notes.map((note) => {
-          const startBeat = visualStartBeat(note);
-          const durationBeats = visualDurationBeats(note);
+        {notes.map(({ note, startBeat, durationBeats }) => {
           const startY = yForBeat(startBeat, positionBeats, lookAheadBeats);
           const endY = yForBeat(startBeat + durationBeats, positionBeats, lookAheadBeats);
           const top = clampVisibleY(Math.min(startY, endY));
