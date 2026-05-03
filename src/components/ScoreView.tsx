@@ -53,6 +53,8 @@ type ScoreOffset = {
 const OSMD_BEAT_FACTOR = 4;
 const OSMD_HALFTONE_TO_MIDI_OFFSET = 12;
 const MAX_CURSOR_STEPS = 12_000;
+const SCORE_ROW_GAP_PX = 140;
+const SCORE_ROW_WRAP_THRESHOLD_RATIO = 0.22;
 
 function currentMeasure(score: ScoreModel, positionBeats: number): string {
   if (positionBeats < 0) {
@@ -156,6 +158,61 @@ function collectScorePosition(
   positions.push({ beat, x: point.x, y: point.y, notes });
 }
 
+function scoreRowAnchors(view: HTMLDivElement): number[] {
+  const viewBox = view.getBoundingClientRect();
+  const staffTops = (
+    Array.from(view.querySelectorAll(".score-canvas svg .staffline")) as HTMLElement[]
+  )
+    .map((element) => element.getBoundingClientRect().top - viewBox.top + view.scrollTop)
+    .filter((top) => Number.isFinite(top))
+    .toSorted((first, second) => first - second);
+
+  if (staffTops.length === 0) {
+    return [];
+  }
+
+  const rows: number[] = [];
+  let currentTop = staffTops[0];
+  let previousTop = staffTops[0];
+  for (const top of staffTops.slice(1)) {
+    if (top - previousTop > SCORE_ROW_GAP_PX) {
+      rows.push(currentTop);
+      currentTop = top;
+    }
+    previousTop = top;
+  }
+  rows.push(currentTop);
+
+  return rows;
+}
+
+function normalizeScoreRows(positions: ScorePosition[], view: HTMLDivElement): ScorePosition[] {
+  if (positions.length === 0) {
+    return positions;
+  }
+
+  const rows = scoreRowAnchors(view);
+  if (rows.length === 0) {
+    return positions;
+  }
+
+  const wrapThreshold = Math.max(120, view.clientWidth * SCORE_ROW_WRAP_THRESHOLD_RATIO);
+  let rowIndex = 0;
+  let previousX = positions[0].x;
+
+  return positions.map((position, index) => {
+    if (index > 0 && position.x < previousX - wrapThreshold) {
+      rowIndex += 1;
+    }
+    previousX = position.x;
+
+    return {
+      ...position,
+      y: rows[Math.min(rowIndex, rows.length - 1)] ?? position.y,
+    };
+  });
+}
+
 function schedulePositionBuild(callback: (deadline?: IdleDeadline) => void): () => void {
   const idleWindow = window;
   if (idleWindow.requestIdleCallback && idleWindow.cancelIdleCallback) {
@@ -217,7 +274,7 @@ function startScorePositionBuild(
       for (const cursor of cursors) {
         cursor.hide();
       }
-      onComplete(positions);
+      onComplete(normalizeScoreRows(positions, view));
       return;
     }
 
