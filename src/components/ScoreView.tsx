@@ -668,7 +668,11 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
         }
       })
       .catch((reason: unknown) => {
-        setError(reason instanceof Error ? reason.message : "Failed to render score.");
+        setError(
+          `Notation render failed: ${
+            reason instanceof Error ? reason.message : "Failed to render score."
+          }`,
+        );
       });
 
     return () => {

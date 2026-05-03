@@ -84,7 +84,11 @@ function App() {
         } catch (error) {
           usePracticeStore
             .getState()
-            .setAudioError(error instanceof Error ? error.message : "Failed to start piano audio.");
+            .setAudioError(
+              `Audio start failed: ${
+                error instanceof Error ? error.message : "Failed to start piano audio."
+              }`,
+            );
         }
       });
     };

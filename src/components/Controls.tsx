@@ -107,7 +107,11 @@ export const Controls = memo(function Controls() {
       await ensurePianoEngine();
       togglePlaying();
     } catch (error) {
-      setAudioError(error instanceof Error ? error.message : "Failed to start piano audio.");
+      setAudioError(
+        `Audio start failed: ${
+          error instanceof Error ? error.message : "Failed to start piano audio."
+        }`,
+      );
     }
   };
   const stopMeasureRepeat = useCallback(() => {

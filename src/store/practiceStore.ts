@@ -153,6 +153,24 @@ function initialSettings(): PracticeSettings {
   return { ...BASE_SETTINGS, ...readPersistedSettings() };
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function scoreLoadErrorMessage(sourceName: string, error: unknown): string {
+  const message = errorMessage(error, "Failed to load MusicXML.");
+  const lowerName = sourceName.toLowerCase();
+  if (lowerName.endsWith(".mxl")) {
+    return `MXL load failed: ${message}`;
+  }
+
+  if (/invalid musicxml|unsupported musicxml|playable part|score-partwise/i.test(message)) {
+    return `MusicXML parse failed: ${message}`;
+  }
+
+  return `MusicXML load failed: ${message}`;
+}
+
 const ACTIVE_EVENT_LOOKBACK_BEATS = 16;
 const measureByNumberCache = new WeakMap<ScoreModel, Map<string, ScoreModel["measures"][number]>>();
 const performanceMeasuresCache = new WeakMap<
@@ -580,7 +598,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
     } catch (error) {
       set({
         isLoading: false,
-        loadError: error instanceof Error ? error.message : "Failed to load MusicXML.",
+        loadError: scoreLoadErrorMessage(file.name, error),
       });
     }
   },
@@ -598,7 +616,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
     } catch (error) {
       set({
         isLoading: false,
-        loadError: error instanceof Error ? error.message : "Failed to load the sample score.",
+        loadError: scoreLoadErrorMessage("bach-minuet.musicxml", error),
       });
     }
   },
@@ -655,7 +673,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
     } catch (error) {
       set({
         audioStatus: "error",
-        audioError: error instanceof Error ? error.message : "Failed to load piano audio.",
+        audioError: `Audio load failed: ${errorMessage(error, "Failed to load piano audio.")}`,
         isPlaying: false,
       });
       return false;
