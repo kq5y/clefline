@@ -7,6 +7,7 @@ import {
 } from "../store/practiceStore";
 
 const HIDDEN_COMMIT_MS = 250;
+const VISIBLE_COMMIT_MS = 50;
 
 export function usePlaybackClock(): void {
   const lastFrame = useRef<number | undefined>(undefined);
@@ -43,7 +44,8 @@ export function usePlaybackClock(): void {
       const deltaSeconds = (now - previous) / 1000;
       let nextPosition = positionRef.current + deltaSeconds * beatRate;
       let shouldStop = false;
-      let shouldCommit = document.hidden ? now - lastCommitFrame.current >= HIDDEN_COMMIT_MS : true;
+      const commitInterval = document.hidden ? HIDDEN_COMMIT_MS : VISIBLE_COMMIT_MS;
+      let shouldCommit = now - lastCommitFrame.current >= commitInterval;
 
       if (bounds && nextPosition >= bounds.endBeat) {
         nextPosition = bounds.startBeat;

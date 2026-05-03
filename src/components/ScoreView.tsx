@@ -4,12 +4,11 @@ import { sanitizeScoreDisplayXml } from "../lib/musicxml/displayXml";
 import { buildGlissandoSegments } from "../lib/musicxml/glissando";
 import { loadOsmd } from "../lib/osmd";
 import {
-  loopBounds,
-  playbackEndBeat,
-  sourceBeatAt,
-  tempoAtPlaybackBeat,
-  usePracticeStore,
-} from "../store/practiceStore";
+  createPlaybackDisplayAnchor,
+  displayPlaybackBeat,
+  type PlaybackDisplayAnchor,
+} from "../lib/playbackDisplayPosition";
+import { sourceBeatAt, usePracticeStore } from "../store/practiceStore";
 import type { ScoreModel } from "../lib/musicxml";
 
 type ScoreViewProps = {
@@ -68,15 +67,6 @@ type ViewOrigin = {
   top: number;
 };
 
-type PracticeState = ReturnType<typeof usePracticeStore.getState>;
-
-type PlaybackAnchor = {
-  isPlaying: boolean;
-  playbackEvents: PracticeState["playbackEvents"];
-  positionBeats: number;
-  time: number;
-};
-
 const OSMD_BEAT_FACTOR = 4;
 const OSMD_HALFTONE_TO_MIDI_OFFSET = 12;
 const MAX_CURSOR_STEPS = 12_000;
@@ -85,7 +75,6 @@ const SCORE_ROW_WRAP_THRESHOLD_RATIO = 0.22;
 const HIGHLIGHT_UPDATE_INTERVAL_MS = 45;
 const POSITION_BUILD_MIN_IDLE_MS = 8;
 const POSITION_BUILD_FALLBACK_STEPS = 24;
-const MAX_POSITION_EXTRAPOLATION_SECONDS = 0.18;
 
 function visibleCursorElement(view: HTMLDivElement): HTMLElement | undefined {
   const cursor =
@@ -118,7 +107,7 @@ function cursorPointInView(
   const cursorBox = cursor.getBoundingClientRect();
 
   return {
-    x: cursorBox.left - viewOrigin.left + view.scrollLeft + contentOffset.x,
+    x: cursorBox.left - viewOrigin.left + contentOffset.x,
     y: cursorBox.top - viewOrigin.top + view.scrollTop + contentOffset.y,
   };
 }
@@ -404,7 +393,7 @@ function noteHeadBoxInView(
   const box = element.getBoundingClientRect();
 
   return {
-    x: box.left - viewOrigin.left + view.scrollLeft + contentOffset.x,
+    x: box.left - viewOrigin.left + contentOffset.x,
     y: box.top - viewOrigin.top + view.scrollTop + contentOffset.y,
     width: box.width,
     height: box.height,
@@ -511,45 +500,11 @@ function renderGlissandoOverlays(
 
 function scoreBounds(view: HTMLDivElement, track: HTMLDivElement): ScoreBounds {
   return {
-    scrollWidth: Math.max(view.scrollWidth, track.scrollWidth),
-    scrollHeight: Math.max(view.scrollHeight, track.scrollHeight),
+    scrollWidth: track.scrollWidth,
+    scrollHeight: track.scrollHeight,
     viewWidth: view.clientWidth,
     viewHeight: view.clientHeight,
   };
-}
-
-function displayPlaybackBeat(state: PracticeState, anchor: PlaybackAnchor, frameTime: number) {
-  if (
-    state.positionBeats !== anchor.positionBeats ||
-    state.isPlaying !== anchor.isPlaying ||
-    state.playbackEvents !== anchor.playbackEvents
-  ) {
-    anchor.positionBeats = state.positionBeats;
-    anchor.isPlaying = state.isPlaying;
-    anchor.playbackEvents = state.playbackEvents;
-    anchor.time = frameTime;
-  }
-
-  if (!state.score || !state.isPlaying) {
-    return state.positionBeats;
-  }
-
-  const elapsedSeconds = Math.min(
-    MAX_POSITION_EXTRAPOLATION_SECONDS,
-    Math.max(0, (frameTime - anchor.time) / 1000),
-  );
-  const tempo = tempoAtPlaybackBeat(state.score, state.playbackEvents, anchor.positionBeats);
-  const beatRate = (tempo / 60) * state.settings.speed;
-  let nextPosition = anchor.positionBeats + elapsedSeconds * beatRate;
-  const bounds = loopBounds(state.score, state.settings);
-  if (bounds && nextPosition >= bounds.endBeat) {
-    const loopDuration = Math.max(0.001, bounds.endBeat - bounds.startBeat);
-    nextPosition = bounds.startBeat + ((nextPosition - bounds.startBeat) % loopDuration);
-  } else {
-    nextPosition = Math.min(nextPosition, playbackEndBeat(state.score, state.playbackEvents));
-  }
-
-  return nextPosition;
 }
 
 export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewProps) {
@@ -565,12 +520,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   const lastHighlightTimeRef = useRef(0);
   const animationFrameRef = useRef<number | undefined>(undefined);
   const positionBuildCancelRef = useRef<(() => void) | undefined>(undefined);
-  const playbackAnchorRef = useRef<PlaybackAnchor>({
-    isPlaying: false,
-    playbackEvents: usePracticeStore.getState().playbackEvents,
-    positionBeats: usePracticeStore.getState().positionBeats,
-    time: window.performance.now(),
-  });
+  const playbackAnchorRef = useRef<PlaybackDisplayAnchor>(createPlaybackDisplayAnchor());
   const scoreOffsetRef = useRef<ScoreOffset>({ x: 0, y: 0 });
   const scoreBoundsRef = useRef<ScoreBounds>({
     scrollHeight: 0,
@@ -582,12 +532,11 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   activeRef.current = active;
   const setScoreOffset = useCallback((offset: ScoreOffset) => {
     scoreOffsetRef.current = offset;
-    if (viewRef.current) {
-      viewRef.current.scrollLeft = offset.x;
-      viewRef.current.scrollTop = offset.y;
+    if (trackRef.current) {
+      trackRef.current.style.transform = `translate3d(${-offset.x}px, ${-offset.y}px, 0)`;
     }
   }, []);
-  const contentOffset = useCallback((): ScoreOffset => ({ x: 0, y: 0 }), []);
+  const contentOffset = useCallback((): ScoreOffset => scoreOffsetRef.current, []);
   const refreshScoreBounds = useCallback(() => {
     const view = viewRef.current;
     const track = trackRef.current;

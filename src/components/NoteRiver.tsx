@@ -2,6 +2,11 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { pianoKeyLayoutForMidi, type PianoKeyLayout } from "../lib/pianoLayout";
 import { buildGlissandoSegments } from "../lib/musicxml/glissando";
 import {
+  createPlaybackDisplayAnchor,
+  displayPlaybackBeat,
+  type PlaybackDisplayAnchor,
+} from "../lib/playbackDisplayPosition";
+import {
   minimumPositionBeats,
   sourceBeatAt,
   usePracticeStore,
@@ -29,6 +34,8 @@ const VIEWBOX_TOP = -SPAWN_Y;
 const MIN_NOTE_HEIGHT_Y = 1.2;
 const MEASURE_LABEL_HEIGHT_PX = 20;
 const MEASURE_LABEL_EDGE_PADDING_PX = 6;
+const NOTE_LABEL_UPDATE_MS = 60;
+const MAX_CANVAS_PIXEL_RATIO = 1.5;
 
 const NOTE_COLORS: Record<Hand, { black: string; white: string }> = {
   left: { black: "#1f8093", white: "#52c7e8" },
@@ -255,7 +262,7 @@ function resizeCanvas(canvas: HTMLCanvasElement, lookAheadBeats: number): boolea
   const { height, width } = canvasSize(canvas);
   const bufferPx = bufferPxFor(height, lookAheadBeats);
   const layerHeight = height + bufferPx * 2;
-  const pixelRatio = window.devicePixelRatio || 1;
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_CANVAS_PIXEL_RATIO);
   const nextWidth = Math.max(1, Math.round(width * pixelRatio));
   const nextHeight = Math.max(1, Math.round(layerHeight * pixelRatio));
   const changed = canvas.width !== nextWidth || canvas.height !== nextHeight;
@@ -465,6 +472,9 @@ export const NoteRiver = memo(function NoteRiver({
   const latestPositionBeatRef = useRef(currentDisplayBeat());
   const anchorBeatRef = useRef(latestPositionBeatRef.current);
   const labelSignatureRef = useRef("");
+  const lastLabelUpdateTimeRef = useRef(0);
+  const animationFrameRef = useRef<number | undefined>(undefined);
+  const playbackAnchorRef = useRef<PlaybackDisplayAnchor>(createPlaybackDisplayAnchor());
   const visualScore = useMemo<VisualScore>(() => {
     if (!score) {
       return EMPTY_VISUAL_SCORE;
@@ -560,10 +570,17 @@ export const NoteRiver = memo(function NoteRiver({
     [redrawLayer, updateMotion],
   );
 
-  const updateActiveLabels = useCallback((positionBeats: number) => {
+  const updateActiveLabels = useCallback((positionBeats: number, frameTime?: number) => {
     if (!showNoteNamesRef.current) {
       return;
     }
+    if (
+      frameTime !== undefined &&
+      frameTime - lastLabelUpdateTimeRef.current < NOTE_LABEL_UPDATE_MS
+    ) {
+      return;
+    }
+    lastLabelUpdateTimeRef.current = frameTime ?? window.performance.now();
 
     const nextLabels = activeLabelNotesAt(
       visualScoreRef.current,
@@ -605,6 +622,7 @@ export const NoteRiver = memo(function NoteRiver({
     latestPositionBeatRef.current = nextBeat;
     anchorBeatRef.current = nextBeat;
     labelSignatureRef.current = "";
+    lastLabelUpdateTimeRef.current = 0;
     redrawLayer(nextBeat);
     updateMotion(nextBeat);
     updateActiveLabels(nextBeat);
@@ -616,8 +634,14 @@ export const NoteRiver = memo(function NoteRiver({
   }, [handMode, lookAheadBeats, reanchor, showMeasureLines, updateActiveLabels, visualScore]);
 
   useEffect(() => {
-    const update = () => {
-      const positionBeats = currentDisplayBeat();
+    if (!score) {
+      return undefined;
+    }
+
+    const update = (frameTime: number) => {
+      const state = usePracticeStore.getState();
+      const playbackBeat = displayPlaybackBeat(state, playbackAnchorRef.current, frameTime);
+      const positionBeats = sourceBeatAt(state.playbackEvents, playbackBeat);
       latestPositionBeatRef.current = positionBeats;
       if (
         positionBeats < anchorBeatRef.current - REANCHOR_BEHIND_BEATS ||
@@ -627,20 +651,22 @@ export const NoteRiver = memo(function NoteRiver({
       } else {
         updateMotion(positionBeats);
       }
-      updateActiveLabels(positionBeats);
+      updateActiveLabels(positionBeats, frameTime);
     };
 
-    update();
+    const frame = (frameTime: number) => {
+      update(frameTime);
+      animationFrameRef.current = window.requestAnimationFrame(frame);
+    };
+    animationFrameRef.current = window.requestAnimationFrame(frame);
 
-    return usePracticeStore.subscribe((nextState, previousState) => {
-      if (
-        nextState.positionBeats !== previousState.positionBeats ||
-        nextState.playbackEvents !== previousState.playbackEvents
-      ) {
-        update();
+    return () => {
+      if (animationFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = undefined;
       }
-    });
-  }, [reanchor, updateActiveLabels, updateMotion]);
+    };
+  }, [reanchor, score, updateActiveLabels, updateMotion]);
 
   useEffect(() => {
     if (!showNoteNames) {

@@ -503,15 +503,16 @@ input:focus-visible {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  overscroll-behavior: none;
-  scroll-behavior: auto;
 }
 
 .score-track {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   min-width: 100%;
   min-height: 100%;
+  will-change: transform;
 }
 
 .score-canvas {
