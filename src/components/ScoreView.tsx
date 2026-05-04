@@ -184,16 +184,18 @@ function scoreRowAnchors(view: HTMLDivElement, contentOffset: ScoreOffset): numb
   }
 
   const rows: number[] = [];
-  let currentTop = staffTops[0];
+  let rowStaves: number[] = [staffTops[0]];
   let previousTop = staffTops[0];
   for (const top of staffTops.slice(1)) {
     if (top - previousTop > SCORE_ROW_GAP_PX) {
-      rows.push(currentTop);
-      currentTop = top;
+      rows.push((rowStaves[0] + rowStaves[rowStaves.length - 1]) / 2);
+      rowStaves = [top];
+    } else {
+      rowStaves.push(top);
     }
     previousTop = top;
   }
-  rows.push(currentTop);
+  rows.push((rowStaves[0] + rowStaves[rowStaves.length - 1]) / 2);
 
   return rows;
 }
@@ -523,7 +525,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       const targetScrollX = Math.min(maxScrollX, Math.max(0, lineX - bounds.viewWidth * 0.42));
       const targetScrollY = Math.min(
         maxScrollY,
-        Math.max(0, (currentPosition?.y ?? 0) - bounds.viewHeight * 0.3),
+        Math.max(0, (currentPosition?.y ?? 0) - bounds.viewHeight * 0.5),
       );
       if (
         Math.abs(scoreOffsetRef.current.x - targetScrollX) > SCROLL_UPDATE_THRESHOLD_PX ||
