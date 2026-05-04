@@ -167,6 +167,22 @@ function liftRehearsalLabels(document: XMLDocument): void {
   }
 }
 
+export function truncateScoreForPreview(xml: string, maxMeasures: number): string {
+  const document = parseDisplayXml(xml);
+  if (!document) {
+    return xml;
+  }
+
+  for (const part of Array.from(document.getElementsByTagName("part"))) {
+    const measures = Array.from(part.getElementsByTagName("measure"));
+    for (let i = maxMeasures; i < measures.length; i += 1) {
+      measures[i].remove();
+    }
+  }
+
+  return new XMLSerializer().serializeToString(document);
+}
+
 export function sanitizeScoreDisplayXml(xml: string): string {
   const symbolSafeXml = replaceMuseScoreSymbols(xml);
   const document = parseDisplayXml(symbolSafeXml);
