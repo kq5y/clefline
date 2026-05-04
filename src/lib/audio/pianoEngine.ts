@@ -128,17 +128,6 @@ export function scheduleMidiOnBackend(
   );
 }
 
-export async function scheduleMidi(
-  midi: number,
-  startTime: number,
-  durationSeconds: number,
-  velocity: number,
-  masterVolume = 1,
-): Promise<void> {
-  const backend = await ensurePianoEngine();
-  scheduleMidiOnBackend(backend, midi, startTime, durationSeconds, velocity, masterVolume);
-}
-
 export function scheduleMetronomeClickOnBackend(
   backend: PianoAudioBackend,
   startTime: number,
@@ -156,15 +145,6 @@ export function scheduleMetronomeClickOnBackend(
     startTime,
     clampVolume(accented ? 0.92 : 0.58),
   );
-}
-
-export async function scheduleMetronomeClick(
-  startTime: number,
-  accented: boolean,
-  volume: number,
-): Promise<void> {
-  const backend = await ensurePianoEngine();
-  scheduleMetronomeClickOnBackend(backend, startTime, accented, volume);
 }
 
 export async function releaseAllPianoKeys(): Promise<void> {
