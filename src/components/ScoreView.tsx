@@ -832,6 +832,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     <div className="score-view">
       {error ? <div className="score-error">{error}</div> : null}
       {loadingMessage ? <div className="score-loading">{loadingMessage}</div> : null}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
         className={isPlaying ? "score-scroll" : "score-scroll scrollable"}
         ref={viewRef}

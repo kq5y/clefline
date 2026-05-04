@@ -42,7 +42,7 @@ type PracticeState = {
   settings: PracticeSettings;
   loadXml: (xml: string, sourceName: string) => void;
   loadFile: (file: File) => Promise<void>;
-  loadSample: () => Promise<void>;
+  loadSample: (sampleId?: string) => Promise<void>;
   setPlaying: (isPlaying: boolean) => void;
   togglePlaying: () => void;
   setPosition: (positionBeats: number) => void;
@@ -606,7 +606,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
     }
   },
 
-  async loadSample() {
+  async loadSample(sampleFile = "bach-minuet.mxl") {
     set({
       isLoading: true,
       loadError: undefined,
@@ -614,12 +614,12 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       positionBeats: minimumPositionBeats(get().score),
     });
     try {
-      const loaded = await fetchMusicXml("/samples/bach-minuet.musicxml");
-      get().loadXml(loaded.xml, "bach-minuet.musicxml");
+      const loaded = await fetchMusicXml(`/samples/${sampleFile}`);
+      get().loadXml(loaded.xml, sampleFile);
     } catch (error) {
       set({
         isLoading: false,
-        loadError: scoreLoadErrorMessage("bach-minuet.musicxml", error),
+        loadError: scoreLoadErrorMessage(sampleFile, error),
       });
     }
   },

@@ -1,14 +1,25 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 import { parseMusicXml } from "./parse";
 import { buildMetronomeClicks, buildPlaybackEvents, buildPlaybackSections } from "./timeline";
 
-const samplePath = resolve(process.cwd(), "public/samples/bach-minuet.musicxml");
+const samplePath = resolve(process.cwd(), "public/samples/bach-minuet.mxl");
+
+async function loadMxl(path: string): Promise<string> {
+  const buffer = await readFile(path);
+  const zip = await JSZip.loadAsync(buffer);
+  const xmlFile = Object.keys(zip.files).find(
+    (p) => p.toLowerCase().endsWith(".xml") && !p.startsWith("META-INF/"),
+  );
+  if (!xmlFile) throw new Error("No XML file found in MXL");
+  return zip.file(xmlFile)!.async("text");
+}
 
 describe("parseMusicXml", () => {
   it("extracts the public Bach minuet sample into a practice score model", async () => {
-    const xml = await readFile(samplePath, "utf8");
+    const xml = await loadMxl(samplePath);
     const score = parseMusicXml(xml);
     const playback = buildPlaybackEvents(score);
     const sections = buildPlaybackSections(score);

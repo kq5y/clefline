@@ -20,12 +20,24 @@ pnpm test:e2e
 
 ## Samples
 
-Only `public/samples/bach-minuet.musicxml` is public and committed. It is
-`Bach_Minuet_in_G_Major_BWV_Anh._114.mxl` from the MuseTrainer public domain
-MusicXML library, extracted to uncompressed MusicXML. The score file declares
-`Public Domain (PianoXML typeset)` in its MusicXML rights metadata.
+The sample scores in `public/samples/` are from the
+[MuseTrainer public domain MusicXML library](https://github.com/musetrainer/library):
+
+| File | Title | Composer |
+|------|-------|----------|
+| `bach-minuet.mxl` | Minuet in G Major BWV Anh. 114 | J.S. Bach |
+| `fur-elise-easy.mxl` | Für Elise (Easy) | Beethoven |
+| `flight-of-the-bumblebee.mxl` | Flight of the Bumblebee | Rimsky-Korsakov |
+| `la-campanella.mxl` | La Campanella (Grandes Études de Paganini No. 3) | Franz Liszt |
+| `moonlight-sonata-3rd.mxl` | Piano Sonata No. 14 "Moonlight" 3rd Movement | Beethoven |
+
+All samples are public domain.
 
 ## License
 
-Code is available under the MIT License. The bundled Bach Minuet sample declares
-`Public Domain (PianoXML typeset)` in its MusicXML rights metadata.
+Code is available under the MIT License.
+
+Sample scores are public domain from the MuseTrainer library.
+
+Sheet music rendering is powered by [OpenSheetMusicDisplay](https://github.com/opensheetmusicdisplay/opensheetmusicdisplay),
+licensed under the BSD 3-Clause License.

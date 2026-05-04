@@ -203,6 +203,33 @@
   color: var(--text-muted);
 }
 
+.sample-select-group {
+  display: flex;
+  gap: 0;
+}
+
+.sample-select {
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  background: var(--control);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  min-width: 200px;
+}
+
+.sample-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sample-select-group .welcome-button {
+  border-radius: 0 8px 8px 0;
+}
+
 .title-file-picker {
   cursor: pointer;
   display: block;

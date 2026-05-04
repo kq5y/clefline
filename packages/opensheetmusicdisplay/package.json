@@ -4,10 +4,10 @@
   "description": "OSMD fork with async rendering support",
   "main": "build/opensheetmusicdisplay.min.js",
   "module": "build/opensheetmusicdisplay.min.js",
-  "types": "build/dist/src/index.d.ts",
+  "types": "build/dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./build/dist/src/index.d.ts",
+      "types": "./build/dist/index.d.ts",
       "import": "./build/opensheetmusicdisplay.min.js",
       "require": "./build/opensheetmusicdisplay.min.js"
     }
