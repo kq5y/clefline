@@ -606,6 +606,16 @@ input:focus-visible {
   contain: strict;
 }
 
+.score-scroll.scrollable {
+  overflow: auto;
+  cursor: pointer;
+}
+
+.score-scroll.scrollable .score-track {
+  position: relative;
+  width: max-content;
+}
+
 .score-track {
   position: absolute;
   top: 0;
@@ -652,7 +662,7 @@ input:focus-visible {
   z-index: 3;
   top: 0;
   bottom: 0;
-  left: 42%;
+  left: 0;
   width: 0;
   border-left: 3px solid #e05842;
   box-shadow: 0 0 16px rgb(224 88 66 / 38%);

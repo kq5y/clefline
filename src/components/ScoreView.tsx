@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { OpenSheetMusicDisplay as OSMDInstance } from "opensheetmusicdisplay";
 import { sanitizeScoreDisplayXml } from "../lib/musicxml/displayXml";
-import { buildGlissandoSegments } from "../lib/musicxml/glissando";
 import { loadOsmd } from "../lib/osmd";
 import { loadAndRenderOsmdAsync } from "../lib/osmdAsync";
 import {
@@ -42,15 +41,6 @@ type NoteHeadBox = {
   height: number;
 };
 
-type ScoreGlissandoOverlay = {
-  id: string;
-  x1: number;
-  x2: number;
-  y1: number;
-  y2: number;
-  hand: string;
-};
-
 type ScoreOffset = {
   x: number;
   y: number;
@@ -69,7 +59,6 @@ type ViewOrigin = {
 };
 
 const OSMD_BEAT_FACTOR = 4;
-const OSMD_HALFTONE_TO_MIDI_OFFSET = 12;
 const MAX_CURSOR_STEPS = 12_000;
 const SCORE_ROW_GAP_PX = 140;
 const SCORE_ROW_WRAP_THRESHOLD_RATIO = 0.22;
@@ -412,104 +401,6 @@ function noteHeadBoxInView(
   };
 }
 
-function graphicalMidi(note: ColorableGraphicalNote): number | undefined {
-  return typeof note.sourceNote?.halfTone === "number"
-    ? note.sourceNote.halfTone + OSMD_HALFTONE_TO_MIDI_OFFSET
-    : undefined;
-}
-
-function findGraphicalNote(
-  positions: ScorePosition[],
-  startBeat: number,
-  midi: number,
-): ColorableGraphicalNote | undefined {
-  const index = positionIndexForBeat(positions, startBeat);
-  const nearby = [index - 1, index, index + 1].filter(
-    (candidate) => candidate >= 0 && candidate < positions.length,
-  );
-
-  for (const candidate of nearby) {
-    const position = positions[candidate];
-    if (Math.abs(position.beat - startBeat) > 0.001) {
-      continue;
-    }
-
-    const match = position.notes.find((graphicalNote) => graphicalMidi(graphicalNote) === midi);
-    if (match) {
-      return match;
-    }
-  }
-
-  return undefined;
-}
-
-function buildScoreGlissandoOverlays(
-  score: ScoreModel,
-  positions: ScorePosition[],
-  view: HTMLDivElement,
-  contentOffset: ScoreOffset,
-): ScoreGlissandoOverlay[] {
-  if (positions.length === 0) {
-    return [];
-  }
-
-  const viewOrigin = view.getBoundingClientRect();
-
-  return buildGlissandoSegments(score.notes).flatMap((segment) => {
-    const startNote = findGraphicalNote(positions, segment.startBeat, segment.startMidi);
-    const endNote = findGraphicalNote(positions, segment.endBeat, segment.endMidi);
-    if (!startNote || !endNote) {
-      return [];
-    }
-
-    const startBox = noteHeadBoxInView(startNote, view, viewOrigin, contentOffset);
-    const endBox = noteHeadBoxInView(endNote, view, viewOrigin, contentOffset);
-    if (!startBox || !endBox) {
-      return [];
-    }
-
-    const startCenterX = startBox.x + startBox.width / 2;
-    const endCenterX = endBox.x + endBox.width / 2;
-    const leftToRight = endCenterX >= startCenterX;
-
-    return [
-      {
-        id: segment.id,
-        x1: leftToRight ? startBox.x + startBox.width : startBox.x,
-        x2: leftToRight ? endBox.x : endBox.x + endBox.width,
-        y1: startBox.y + startBox.height / 2,
-        y2: endBox.y + endBox.height / 2,
-        hand: segment.hand,
-      },
-    ];
-  });
-}
-
-function renderGlissandoOverlays(
-  overlay: SVGSVGElement | null,
-  host: HTMLElement | null,
-  segments: ScoreGlissandoOverlay[],
-): void {
-  if (!overlay || !host) {
-    return;
-  }
-
-  overlay.setAttribute("width", `${host.scrollWidth}`);
-  overlay.setAttribute("height", `${host.scrollHeight}`);
-  overlay.setAttribute("viewBox", `0 0 ${host.scrollWidth} ${host.scrollHeight}`);
-  overlay.replaceChildren();
-
-  for (const segment of segments) {
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    line.setAttribute("class", `score-glissando-line ${segment.hand}`);
-    line.setAttribute("x1", `${segment.x1}`);
-    line.setAttribute("x2", `${segment.x2}`);
-    line.setAttribute("y1", `${segment.y1}`);
-    line.setAttribute("y2", `${segment.y2}`);
-    overlay.append(line);
-  }
-}
-
 function scoreBounds(view: HTMLDivElement, track: HTMLDivElement): ScoreBounds {
   return {
     scrollWidth: track.scrollWidth,
@@ -540,15 +431,63 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     viewHeight: 0,
     viewWidth: 0,
   });
+  const playbackLineRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [loadingMessage, setLoadingMessage] = useState<string | undefined>();
+  const isPlaying = usePracticeStore((state) => state.isPlaying);
+  const setPosition = usePracticeStore((state) => state.setPosition);
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
   activeRef.current = active;
+
   const setScoreOffset = useCallback((offset: ScoreOffset) => {
     scoreOffsetRef.current = offset;
-    if (trackRef.current) {
+    if (trackRef.current && isPlayingRef.current) {
       trackRef.current.style.transform = `translate3d(${-offset.x}px, ${-offset.y}px, 0)`;
     }
   }, []);
+
+  const syncOffsetToScroll = useCallback(() => {
+    const view = viewRef.current;
+    if (view) {
+      scoreOffsetRef.current = { x: view.scrollLeft, y: view.scrollTop };
+    }
+  }, []);
+
+  const handleScoreClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (isPlayingRef.current) {
+        return;
+      }
+      const view = viewRef.current;
+      if (!view || !score) {
+        return;
+      }
+      const rect = view.getBoundingClientRect();
+      const clickX = event.clientX - rect.left + view.scrollLeft;
+      const clickY = event.clientY - rect.top + view.scrollTop;
+
+      const positions = scorePositionsRef.current;
+      if (positions.length === 0) {
+        return;
+      }
+
+      let closestPosition = positions[0];
+      let minDistance = Number.MAX_VALUE;
+      for (const pos of positions) {
+        const dx = pos.x - clickX;
+        const dy = pos.y - clickY;
+        const distance = dx * dx + dy * dy;
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestPosition = pos;
+        }
+      }
+
+      setPosition(closestPosition.beat);
+    },
+    [score, setPosition],
+  );
   const contentOffset = useCallback((): ScoreOffset => scoreOffsetRef.current, []);
   const refreshScoreBounds = useCallback(() => {
     const view = viewRef.current;
@@ -564,6 +503,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     (positionBeats: number, frameTime = window.performance.now()) => {
       const view = viewRef.current;
       const track = trackRef.current;
+      const playbackLine = playbackLineRef.current;
       if (!view || !track || !score || score.totalBeats <= 0) {
         return;
       }
@@ -577,12 +517,10 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       }
 
       const fallbackX = (positionBeats / score.totalBeats) * bounds.scrollWidth;
+      const lineX = currentPosition?.x ?? fallbackX;
       const maxScrollX = Math.max(0, bounds.scrollWidth - bounds.viewWidth);
       const maxScrollY = Math.max(0, bounds.scrollHeight - bounds.viewHeight);
-      const targetScrollX = Math.min(
-        maxScrollX,
-        Math.max(0, (currentPosition?.x ?? fallbackX) - bounds.viewWidth * 0.42),
-      );
+      const targetScrollX = Math.min(maxScrollX, Math.max(0, lineX - bounds.viewWidth * 0.42));
       const targetScrollY = Math.min(
         maxScrollY,
         Math.max(0, (currentPosition?.y ?? 0) - bounds.viewHeight * 0.3),
@@ -592,6 +530,10 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
         Math.abs(scoreOffsetRef.current.y - targetScrollY) > SCROLL_UPDATE_THRESHOLD_PX
       ) {
         setScoreOffset({ x: targetScrollX, y: targetScrollY });
+      }
+
+      if (playbackLine) {
+        playbackLine.style.left = `${lineX}px`;
       }
 
       const nextHighlightIndex = positionBeats < 0 ? -1 : (currentPosition?.index ?? -1);
@@ -640,17 +582,16 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
         positionBuildCancelRef.current = undefined;
         scorePositionsRef.current = positions;
         refreshScoreBounds();
-        // OSMD native glissando is now enabled, app-side overlay disabled
-        // renderGlissandoOverlays(
-        //   glissandoOverlayRef.current,
-        //   trackRef.current,
-        //   buildScoreGlissandoOverlays(score, positions, viewRef.current, contentOffset()),
-        // );
         const latestState = usePracticeStore.getState();
         updateScorePosition(
           sourceBeatAt(latestState.playbackEvents, latestState.positionBeats),
           window.performance.now(),
         );
+        if (!latestState.isPlaying && viewRef.current) {
+          viewRef.current.scrollLeft = scoreOffsetRef.current.x;
+          viewRef.current.scrollTop = scoreOffsetRef.current.y;
+        }
+        setLoadingMessage(undefined);
       },
     );
   }, [contentOffset, refreshScoreBounds, score, updateScorePosition]);
@@ -716,15 +657,12 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       }
       osmdRef.current = osmd;
       refreshScoreBounds();
-      const currentState = usePracticeStore.getState();
-      updateScorePosition(
-        sourceBeatAt(currentState.playbackEvents, currentState.positionBeats),
-        window.performance.now(),
-      );
       if (activeRef.current) {
+        setLoadingMessage("Building positions...");
         startScorePositionIndexBuild();
+      } else {
+        setLoadingMessage(undefined);
       }
-      setLoadingMessage(undefined);
     };
 
     void loadOsmd()
@@ -860,6 +798,28 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     };
   }, [active, score, startScorePositionIndexBuild, updateScorePosition]);
 
+  useEffect(() => {
+    const view = viewRef.current;
+    const track = trackRef.current;
+    if (!view || !track || !active) {
+      return;
+    }
+
+    if (isPlaying) {
+      syncOffsetToScroll();
+      track.style.transform = `translate3d(${-scoreOffsetRef.current.x}px, ${-scoreOffsetRef.current.y}px, 0)`;
+      view.scrollLeft = 0;
+      view.scrollTop = 0;
+    } else {
+      const savedOffset = { ...scoreOffsetRef.current };
+      track.style.transform = "none";
+      requestAnimationFrame(() => {
+        view.scrollLeft = savedOffset.x;
+        view.scrollTop = savedOffset.y;
+      });
+    }
+  }, [active, isPlaying, syncOffsetToScroll]);
+
   if (!score) {
     return (
       <div className="empty-state">
@@ -870,11 +830,16 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
 
   return (
     <div className="score-view">
-      <div className="score-playback-line" aria-hidden="true" />
       {error ? <div className="score-error">{error}</div> : null}
       {loadingMessage ? <div className="score-loading">{loadingMessage}</div> : null}
-      <div className="score-scroll" ref={viewRef}>
+      <div
+        className={isPlaying ? "score-scroll" : "score-scroll scrollable"}
+        ref={viewRef}
+        onClick={handleScoreClick}
+        style={loadingMessage ? { visibility: "hidden" } : undefined}
+      >
         <div className="score-track" ref={trackRef}>
+          <div className="score-playback-line" ref={playbackLineRef} aria-hidden="true" />
           <svg className="score-glissando-overlay" ref={glissandoOverlayRef} aria-hidden="true" />
           <div className="score-canvas" ref={containerRef} />
         </div>
