@@ -29,6 +29,7 @@ export const KeyboardShell = memo(function KeyboardShell() {
   );
   const signatureRef = useRef(activeNoteSignature(activeNotes));
   const showNoteNames = usePracticeStore((state) => state.settings.showNoteNames);
+  const riverRange = usePracticeStore((state) => state.settings.riverRange);
   const volume = usePracticeStore((state) => state.settings.volume);
 
   useEffect(() => {
@@ -57,7 +58,12 @@ export const KeyboardShell = memo(function KeyboardShell() {
 
   return (
     <section className="keyboard-shell" aria-label="Piano keyboard">
-      <PianoKeyboard activeNotes={activeNotes} showNoteNames={showNoteNames} volume={volume} />
+      <PianoKeyboard
+        activeNotes={activeNotes}
+        riverRange={riverRange}
+        showNoteNames={showNoteNames}
+        volume={volume}
+      />
     </section>
   );
 });

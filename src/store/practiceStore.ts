@@ -15,10 +15,16 @@ export type ViewMode = "river" | "score";
 export type HandMode = "both" | "right" | "left";
 export type AudioStatus = "idle" | "loading" | "ready" | "error";
 
+export type RiverRange = {
+  minMidi: number;
+  maxMidi: number;
+};
+
 export type PracticeSettings = {
   viewMode: ViewMode;
   speed: number;
   riverZoom: number;
+  riverRange: RiverRange;
   showMeasureLines: boolean;
   loopEnabled: boolean;
   loopStartMeasure?: string;
@@ -59,6 +65,7 @@ const BASE_SETTINGS: PracticeSettings = {
   viewMode: "river",
   speed: 1,
   riverZoom: 1,
+  riverRange: { minMidi: 21, maxMidi: 108 },
   showMeasureLines: true,
   loopEnabled: false,
   handMode: "both",
@@ -71,6 +78,7 @@ type PersistedPracticeSettings = Pick<
   PracticeSettings,
   | "handMode"
   | "metronomeEnabled"
+  | "riverRange"
   | "riverZoom"
   | "showMeasureLines"
   | "showNoteNames"
@@ -105,6 +113,24 @@ function handModeSetting(value: unknown, fallback: HandMode): HandMode {
   return value === "both" || value === "right" || value === "left" ? value : fallback;
 }
 
+function riverRangeSetting(value: unknown, fallback: RiverRange): RiverRange {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "minMidi" in value &&
+    "maxMidi" in value &&
+    typeof (value as RiverRange).minMidi === "number" &&
+    typeof (value as RiverRange).maxMidi === "number"
+  ) {
+    const range = value as RiverRange;
+    return {
+      minMidi: Math.min(108, Math.max(21, range.minMidi)),
+      maxMidi: Math.min(108, Math.max(21, range.maxMidi)),
+    };
+  }
+  return fallback;
+}
+
 function readPersistedSettings(): Partial<PersistedPracticeSettings> {
   const item = storage()?.getItem(SETTINGS_STORAGE_KEY);
   if (!item) {
@@ -117,10 +143,11 @@ function readPersistedSettings(): Partial<PersistedPracticeSettings> {
     return {
       handMode: handModeSetting(data.handMode, BASE_SETTINGS.handMode),
       metronomeEnabled: booleanSetting(data.metronomeEnabled, BASE_SETTINGS.metronomeEnabled),
-      riverZoom: numberSetting(data.riverZoom, BASE_SETTINGS.riverZoom, 0.6, 2),
+      riverRange: riverRangeSetting(data.riverRange, BASE_SETTINGS.riverRange),
+      riverZoom: numberSetting(data.riverZoom, BASE_SETTINGS.riverZoom, 0.1, 2),
       showMeasureLines: booleanSetting(data.showMeasureLines, BASE_SETTINGS.showMeasureLines),
       showNoteNames: booleanSetting(data.showNoteNames, BASE_SETTINGS.showNoteNames),
-      speed: numberSetting(data.speed, BASE_SETTINGS.speed, 0.25, 1.25),
+      speed: numberSetting(data.speed, BASE_SETTINGS.speed, 0.1, 2),
       viewMode: viewModeSetting(data.viewMode, BASE_SETTINGS.viewMode),
       volume: numberSetting(data.volume, BASE_SETTINGS.volume, 0, 1),
     };
@@ -136,6 +163,7 @@ function persistSettings(settings: PracticeSettings): void {
       JSON.stringify({
         handMode: settings.handMode,
         metronomeEnabled: settings.metronomeEnabled,
+        riverRange: settings.riverRange,
         riverZoom: settings.riverZoom,
         showMeasureLines: settings.showMeasureLines,
         showNoteNames: settings.showNoteNames,

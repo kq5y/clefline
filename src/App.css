@@ -748,8 +748,7 @@ input:focus-visible {
 
 .white-keys {
   height: 100%;
-  display: grid;
-  grid-template-columns: repeat(52, minmax(0, 1fr));
+  display: flex;
   gap: 0;
 }
 

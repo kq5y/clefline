@@ -52,3 +52,31 @@ export function pianoKeyLayoutForMidi(midi: number): PianoKeyLayout {
 
   return midi < PIANO_MIN_MIDI ? layouts[0] : layouts[layouts.length - 1];
 }
+
+export function pianoKeyLayoutForMidiInRange(
+  midi: number,
+  minMidi: number,
+  maxMidi: number,
+): PianoKeyLayout {
+  const baseLayout = pianoKeyLayoutForMidi(midi);
+  const minLayout = pianoKeyLayoutForMidi(minMidi);
+  const maxLayout = pianoKeyLayoutForMidi(maxMidi);
+
+  const rangeStart = minLayout.centerPercent - minLayout.keyWidthPercent / 2;
+  const rangeEnd = maxLayout.centerPercent + maxLayout.keyWidthPercent / 2;
+  const rangeWidth = rangeEnd - rangeStart;
+
+  if (rangeWidth <= 0) {
+    return baseLayout;
+  }
+
+  const scaledCenter = ((baseLayout.centerPercent - rangeStart) / rangeWidth) * 100;
+  const scale = 100 / rangeWidth;
+
+  return {
+    ...baseLayout,
+    centerPercent: scaledCenter,
+    keyWidthPercent: baseLayout.keyWidthPercent * scale,
+    noteWidthPercent: baseLayout.noteWidthPercent * scale,
+  };
+}

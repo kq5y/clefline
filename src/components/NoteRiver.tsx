@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { pianoKeyLayoutForMidi, type PianoKeyLayout } from "../lib/pianoLayout";
+import { pianoKeyLayoutForMidiInRange, type PianoKeyLayout } from "../lib/pianoLayout";
 import {
   createPlaybackDisplayAnchor,
   displayPlaybackBeat,
@@ -9,6 +9,7 @@ import {
   minimumPositionBeats,
   usePracticeStore,
   type HandMode,
+  type RiverRange,
 } from "../store/practiceStore";
 import type { Hand, NoteEvent, PlaybackEvent, ScoreModel } from "../lib/musicxml";
 
@@ -17,6 +18,7 @@ type NoteRiverProps = {
   playbackEvents: PlaybackEvent[];
   handMode: HandMode;
   riverZoom: number;
+  riverRange: RiverRange;
   showMeasureLines: boolean;
   showNoteNames: boolean;
 };
@@ -267,12 +269,15 @@ function drawMeasureLabel(
   context.fillText(text, 8 + labelWidth / 2, labelTop + MEASURE_LABEL_HEIGHT_PX / 2 + 0.5);
 }
 
+const OCTAVE_C_MIDIS = [24, 36, 48, 60, 72, 84, 96];
+
 function drawRiverLayer(
   canvas: HTMLCanvasElement,
   visualScore: VisualScore,
   anchorBeat: number,
   lookAheadBeats: number,
   handMode: HandMode,
+  riverRange: RiverRange,
   showMeasureLines: boolean,
 ): void {
   const context = canvas.getContext("2d");
@@ -292,6 +297,21 @@ function drawRiverLayer(
   context.clearRect(0, 0, width, layerHeight);
   context.lineCap = "round";
   context.lineJoin = "round";
+
+  context.globalAlpha = 1;
+  context.strokeStyle = "rgb(255 255 255 / 12%)";
+  context.lineWidth = 1;
+  for (const cMidi of OCTAVE_C_MIDIS) {
+    if (cMidi < riverRange.minMidi || cMidi > riverRange.maxMidi) {
+      continue;
+    }
+    const layout = pianoKeyLayoutForMidiInRange(cMidi, riverRange.minMidi, riverRange.maxMidi);
+    const x = percentToPx(layout.centerPercent - layout.keyWidthPercent / 2, width);
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.lineTo(x, layerHeight);
+    context.stroke();
+  }
 
   const windowStart = anchorBeat - LOOK_BEHIND_BEATS - RENDER_BUFFER_BEATS;
   const windowEnd = anchorBeat + lookAheadBeats + RENDER_BUFFER_BEATS;
@@ -399,6 +419,7 @@ export const NoteRiver = memo(function NoteRiver({
   playbackEvents,
   handMode,
   riverZoom,
+  riverRange,
   showMeasureLines,
   showNoteNames,
 }: NoteRiverProps) {
@@ -438,7 +459,11 @@ export const NoteRiver = memo(function NoteRiver({
 
         const startBeat = event.absoluteBeat + graceOffset;
         const durationBeats = event.durationBeats;
-        const layout = pianoKeyLayoutForMidi(note.midi);
+        const layout = pianoKeyLayoutForMidiInRange(
+          note.midi,
+          riverRange.minMidi,
+          riverRange.maxMidi,
+        );
         maxDurationBeats = Math.max(maxDurationBeats, durationBeats);
 
         notes.push({
@@ -476,13 +501,15 @@ export const NoteRiver = memo(function NoteRiver({
     const glissandoSegments: VisualGlissandoSegment[] = [];
 
     return { glissandoSegments, maxDurationBeats, measures, notes };
-  }, [score, playbackEvents]);
+  }, [score, playbackEvents, riverRange]);
 
   visualScoreRef.current = visualScore;
   handModeRef.current = handMode;
   showMeasureLinesRef.current = showMeasureLines;
   showNoteNamesRef.current = showNoteNames;
   lookAheadBeatsRef.current = lookAheadBeats;
+  const riverRangeRef = useRef(riverRange);
+  riverRangeRef.current = riverRange;
 
   const redrawLayer = useCallback((anchorBeat: number) => {
     const canvas = canvasRef.current;
@@ -496,6 +523,7 @@ export const NoteRiver = memo(function NoteRiver({
       anchorBeat,
       lookAheadBeatsRef.current,
       handModeRef.current,
+      riverRangeRef.current,
       showMeasureLinesRef.current,
     );
   }, []);
@@ -586,7 +614,7 @@ export const NoteRiver = memo(function NoteRiver({
   useEffect(() => {
     reanchor(latestPositionBeatRef.current);
     updateActiveLabels(latestPositionBeatRef.current);
-  }, [handMode, lookAheadBeats, reanchor, showMeasureLines, updateActiveLabels, visualScore]);
+  }, [handMode, lookAheadBeats, reanchor, riverRange, showMeasureLines, updateActiveLabels, visualScore]);
 
   useEffect(() => {
     if (!score) {

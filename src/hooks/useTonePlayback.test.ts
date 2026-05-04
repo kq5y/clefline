@@ -11,6 +11,7 @@ const DEFAULT_TEST_SETTINGS: PracticeSettings = {
   viewMode: "river",
   speed: 1,
   riverZoom: 1,
+  riverRange: { minMidi: 21, maxMidi: 108 },
   showMeasureLines: true,
   loopEnabled: false,
   handMode: "both",

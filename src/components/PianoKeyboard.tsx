@@ -1,10 +1,16 @@
 import { memo, useCallback, useMemo } from "react";
 import { playMidiOnce } from "../lib/audio/pianoEngine";
-import { BLACK_KEY_LAYOUTS, WHITE_KEY_LAYOUTS } from "../lib/pianoLayout";
+import {
+  BLACK_KEY_LAYOUTS,
+  pianoKeyLayoutForMidiInRange,
+  WHITE_KEY_LAYOUTS,
+} from "../lib/pianoLayout";
 import type { Hand } from "../lib/musicxml";
+import type { RiverRange } from "../store/practiceStore";
 
 type PianoKeyboardProps = {
   activeNotes: Array<{ midi: number; hand: Hand }>;
+  riverRange: RiverRange;
   showNoteNames: boolean;
   volume: number;
 };
@@ -42,7 +48,7 @@ function sameActiveNotes(
 }
 
 export const PianoKeyboard = memo(
-  function PianoKeyboard({ activeNotes, showNoteNames, volume }: PianoKeyboardProps) {
+  function PianoKeyboard({ activeNotes, riverRange, showNoteNames, volume }: PianoKeyboardProps) {
     const active = useMemo(
       () => new Map(activeNotes.map((note) => [note.midi, note.hand])),
       [activeNotes],
@@ -54,10 +60,32 @@ export const PianoKeyboard = memo(
       [volume],
     );
 
+    const whiteKeys = useMemo(
+      () =>
+        WHITE_KEY_LAYOUTS.filter(
+          (key) => key.midi >= riverRange.minMidi && key.midi <= riverRange.maxMidi,
+        ).map((key) => ({
+          ...key,
+          layout: pianoKeyLayoutForMidiInRange(key.midi, riverRange.minMidi, riverRange.maxMidi),
+        })),
+      [riverRange],
+    );
+
+    const blackKeys = useMemo(
+      () =>
+        BLACK_KEY_LAYOUTS.filter(
+          (key) => key.midi >= riverRange.minMidi && key.midi <= riverRange.maxMidi,
+        ).map((key) => ({
+          ...key,
+          layout: pianoKeyLayoutForMidiInRange(key.midi, riverRange.minMidi, riverRange.maxMidi),
+        })),
+      [riverRange],
+    );
+
     return (
       <div className="piano-keyboard">
         <div className="white-keys">
-          {WHITE_KEY_LAYOUTS.map((key) => (
+          {whiteKeys.map((key) => (
             <button
               aria-label={key.name}
               className={activeClass(active.get(key.midi), false)}
@@ -65,21 +93,22 @@ export const PianoKeyboard = memo(
               onPointerDown={() => playKey(key.midi)}
               data-midi={key.midi}
               type="button"
+              style={{ width: `${key.layout.keyWidthPercent}%` }}
             >
               {showNoteNames && key.name.startsWith("C") ? <span>{key.name}</span> : null}
             </button>
           ))}
         </div>
         <div className="black-keys">
-          {BLACK_KEY_LAYOUTS.map((key) => (
+          {blackKeys.map((key) => (
             <button
               aria-label={key.name}
               className={activeClass(active.get(key.midi), true)}
               key={key.midi}
               onPointerDown={() => playKey(key.midi)}
               style={{
-                left: `${key.centerPercent}%`,
-                width: `${key.keyWidthPercent}%`,
+                left: `${key.layout.centerPercent}%`,
+                width: `${key.layout.keyWidthPercent}%`,
               }}
               type="button"
             />
@@ -91,5 +120,7 @@ export const PianoKeyboard = memo(
   (previous, next) =>
     previous.showNoteNames === next.showNoteNames &&
     previous.volume === next.volume &&
+    previous.riverRange.minMidi === next.riverRange.minMidi &&
+    previous.riverRange.maxMidi === next.riverRange.maxMidi &&
     sameActiveNotes(previous.activeNotes, next.activeNotes),
 );

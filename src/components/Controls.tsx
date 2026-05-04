@@ -368,11 +368,24 @@ export const Controls = memo(function Controls() {
         ) : null}
         {openPanel === "practice" ? (
           <div className="panel-stack">
+            <div className="segmented wrapped" aria-label="Hand mode">
+              {(["both", "right", "left"] as const).map((handMode) => (
+                <button
+                  type="button"
+                  className={settings.handMode === handMode ? "selected" : ""}
+                  key={handMode}
+                  onClick={() => updateSettings({ handMode })}
+                >
+                  <Music2 size={15} />
+                  {handMode === "both" ? "Both" : handMode === "right" ? "Right" : "Left"}
+                </button>
+              ))}
+            </div>
             <label className="slider-control stacked">
               Speed
               <input
-                max="1.25"
-                min="0.25"
+                max="2"
+                min="0.1"
                 step="0.05"
                 type="range"
                 value={settings.speed}
@@ -384,13 +397,51 @@ export const Controls = memo(function Controls() {
               Roll zoom
               <input
                 max="2"
-                min="0.6"
+                min="0.1"
                 step="0.1"
                 type="range"
                 value={settings.riverZoom}
                 onChange={(event) => updateSettings({ riverZoom: Number(event.target.value) })}
               />
               <span>{Math.round(settings.riverZoom * 100)}%</span>
+            </label>
+            <label className="slider-control stacked">
+              Roll range (low)
+              <input
+                max="108"
+                min="21"
+                step="1"
+                type="range"
+                value={settings.riverRange.minMidi}
+                onChange={(event) =>
+                  updateSettings({
+                    riverRange: {
+                      ...settings.riverRange,
+                      minMidi: Math.min(Number(event.target.value), settings.riverRange.maxMidi - 12),
+                    },
+                  })
+                }
+              />
+              <span>MIDI {settings.riverRange.minMidi}</span>
+            </label>
+            <label className="slider-control stacked">
+              Roll range (high)
+              <input
+                max="108"
+                min="21"
+                step="1"
+                type="range"
+                value={settings.riverRange.maxMidi}
+                onChange={(event) =>
+                  updateSettings({
+                    riverRange: {
+                      ...settings.riverRange,
+                      maxMidi: Math.max(Number(event.target.value), settings.riverRange.minMidi + 12),
+                    },
+                  })
+                }
+              />
+              <span>MIDI {settings.riverRange.maxMidi}</span>
             </label>
             <label className="slider-control stacked">
               Volume
@@ -450,19 +501,6 @@ export const Controls = memo(function Controls() {
                   ))}
                 </select>
               </label>
-            </div>
-            <div className="segmented wrapped" aria-label="Hand mode">
-              {(["both", "right", "left"] as const).map((handMode) => (
-                <button
-                  type="button"
-                  className={settings.handMode === handMode ? "selected" : ""}
-                  key={handMode}
-                  onClick={() => updateSettings({ handMode })}
-                >
-                  <Music2 size={15} />
-                  {handMode === "both" ? "Both" : handMode === "right" ? "Right" : "Left"}
-                </button>
-              ))}
             </div>
             <label className="toggle-control">
               <input
