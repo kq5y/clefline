@@ -332,33 +332,25 @@ function arpeggioDirection(notes: NoteEvent[]): "up" | "down" {
 
 function findPedalReleaseAt(pedals: PedalEvent[], noteBeat: number): number | undefined {
   let pedalActive = false;
-  let lastStartBeat = 0;
 
   for (const pedal of pedals) {
     if (pedal.beat > noteBeat) {
-      if (pedalActive && (pedal.type === "stop" || pedal.type === "change")) {
-        return pedal.beat;
-      }
-      if (pedal.type === "start") {
-        pedalActive = true;
-      }
-    } else {
-      if (pedal.type === "start") {
-        pedalActive = true;
-        lastStartBeat = pedal.beat;
-      } else if (pedal.type === "stop") {
-        pedalActive = false;
-      } else if (pedal.type === "change") {
-        lastStartBeat = pedal.beat;
-      }
+      break;
+    }
+    if (pedal.type === "start") {
+      pedalActive = true;
+    } else if (pedal.type === "stop") {
+      pedalActive = false;
     }
   }
 
-  if (pedalActive && lastStartBeat <= noteBeat) {
-    for (const pedal of pedals) {
-      if (pedal.beat > noteBeat && (pedal.type === "stop" || pedal.type === "change")) {
-        return pedal.beat;
-      }
+  if (!pedalActive) {
+    return undefined;
+  }
+
+  for (const pedal of pedals) {
+    if (pedal.beat > noteBeat && (pedal.type === "stop" || pedal.type === "change")) {
+      return pedal.beat;
     }
   }
 
