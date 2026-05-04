@@ -9,6 +9,7 @@ export type {
   MeasureModel,
   Notation,
   NoteEvent,
+  PedalEvent,
   PlaybackEvent,
   ScoreMetadata,
   ScoreModel,

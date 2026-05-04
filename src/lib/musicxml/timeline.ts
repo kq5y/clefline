@@ -1,6 +1,13 @@
 import { buildGlissandoSegments } from "./glissando";
 import { midiToPitchName } from "./pitch";
-import type { DirectionEvent, Hand, NoteEvent, PlaybackEvent, ScoreModel } from "./types";
+import type {
+  DirectionEvent,
+  Hand,
+  NoteEvent,
+  PedalEvent,
+  PlaybackEvent,
+  ScoreModel,
+} from "./types";
 
 export type TimelineOptions = {
   handMode?: "both" | "right" | "left";
@@ -323,6 +330,66 @@ function arpeggioDirection(notes: NoteEvent[]): "up" | "down" {
     : "up";
 }
 
+function findPedalReleaseAt(pedals: PedalEvent[], noteBeat: number): number | undefined {
+  let pedalActive = false;
+  let lastStartBeat = 0;
+
+  for (const pedal of pedals) {
+    if (pedal.beat > noteBeat) {
+      if (pedalActive && (pedal.type === "stop" || pedal.type === "change")) {
+        return pedal.beat;
+      }
+      if (pedal.type === "start") {
+        pedalActive = true;
+      }
+    } else {
+      if (pedal.type === "start") {
+        pedalActive = true;
+        lastStartBeat = pedal.beat;
+      } else if (pedal.type === "stop") {
+        pedalActive = false;
+      } else if (pedal.type === "change") {
+        lastStartBeat = pedal.beat;
+      }
+    }
+  }
+
+  if (pedalActive && lastStartBeat <= noteBeat) {
+    for (const pedal of pedals) {
+      if (pedal.beat > noteBeat && (pedal.type === "stop" || pedal.type === "change")) {
+        return pedal.beat;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function applyPedalSustain(events: PlaybackEvent[], pedals: PedalEvent[]): void {
+  if (pedals.length === 0) {
+    return;
+  }
+
+  const sortedPedals = pedals.toSorted((a, b) => a.beat - b.beat);
+
+  for (const event of events) {
+    if (event.notes.some((note) => note.isGrace)) {
+      continue;
+    }
+    if (hasNotation(event.notes, "staccato") || hasNotation(event.notes, "staccatissimo")) {
+      continue;
+    }
+
+    const releaseBeat = findPedalReleaseAt(sortedPedals, event.sourceStartBeat);
+    if (releaseBeat !== undefined) {
+      const sustainedDuration = releaseBeat - event.sourceStartBeat;
+      if (sustainedDuration > event.durationBeats) {
+        event.durationBeats = sustainedDuration;
+      }
+    }
+  }
+}
+
 function buildSourcePlaybackEvents(
   score: ScoreModel,
   options: TimelineOptions = {},
@@ -384,6 +451,7 @@ function buildSourcePlaybackEvents(
     index += 1;
   }
   baseEvents.sort((a, b) => a.absoluteBeat - b.absoluteBeat || a.notes[0].midi - b.notes[0].midi);
+  applyPedalSustain(baseEvents, score.pedals);
 
   return withGlissandoPlayback(score, options, baseEvents);
 }

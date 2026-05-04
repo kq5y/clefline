@@ -84,11 +84,20 @@ export type ScoreWarning = {
   measureNumber?: string;
 };
 
+export type PedalEvent = {
+  id: string;
+  type: "start" | "stop" | "change";
+  beat: number;
+  measureIndex: number;
+  measureNumber: string;
+};
+
 export type ScoreModel = {
   metadata: ScoreMetadata;
   measures: MeasureModel[];
   notes: NoteEvent[];
   directions: DirectionEvent[];
+  pedals: PedalEvent[];
   warnings: ScoreWarning[];
   totalBeats: number;
   rawXml: string;

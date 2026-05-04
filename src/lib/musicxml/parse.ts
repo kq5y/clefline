@@ -7,6 +7,7 @@ import type {
   MeasureModel,
   Notation,
   NoteEvent,
+  PedalEvent,
   ScoreMetadata,
   ScoreModel,
   ScoreWarning,
@@ -348,6 +349,48 @@ function directionKind(element: Element): DirectionKind {
   }
 }
 
+function addPedalEvents(
+  direction: Element,
+  beat: number,
+  measureIndex: number,
+  measureNumber: string,
+  pedals: PedalEvent[],
+): void {
+  for (const directionType of elements(direction, "direction-type")) {
+    const pedal = first(directionType, "pedal");
+    if (!pedal) {
+      continue;
+    }
+
+    const type = attr(pedal, "type");
+    if (type === "start" || type === "resume") {
+      pedals.push({
+        id: `pedal-${pedals.length}`,
+        type: "start",
+        beat,
+        measureIndex,
+        measureNumber,
+      });
+    } else if (type === "stop") {
+      pedals.push({
+        id: `pedal-${pedals.length}`,
+        type: "stop",
+        beat,
+        measureIndex,
+        measureNumber,
+      });
+    } else if (type === "change") {
+      pedals.push({
+        id: `pedal-${pedals.length}`,
+        type: "change",
+        beat,
+        measureIndex,
+        measureNumber,
+      });
+    }
+  }
+}
+
 function parseBarline(barline: Element, measure: MeasureModel): void {
   const repeat = first(barline, "repeat");
   const direction = attr(repeat, "direction");
@@ -408,6 +451,7 @@ export function parseMusicXml(xml: string): ScoreModel {
   const measures: MeasureModel[] = [];
   const notes: NoteEvent[] = [];
   const directions: DirectionEvent[] = [];
+  const pedals: PedalEvent[] = [];
   const warnings: ScoreWarning[] = [];
   let divisions = 1;
   let currentBeat = 0;
@@ -452,14 +496,16 @@ export function parseMusicXml(xml: string): ScoreModel {
       }
 
       if (child.tagName === "direction") {
+        const directionBeat = currentBeat + position / divisions;
         addDirectionEvents(
           child,
-          currentBeat + position / divisions,
+          directionBeat,
           measureIndex,
           measureNumber,
           directions,
           warnings,
         );
+        addPedalEvents(child, directionBeat, measureIndex, measureNumber, pedals);
         continue;
       }
 
@@ -543,6 +589,7 @@ export function parseMusicXml(xml: string): ScoreModel {
     measures,
     notes,
     directions,
+    pedals,
     warnings,
     totalBeats: currentBeat,
     rawXml: xml,
