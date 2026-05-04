@@ -65,10 +65,19 @@ function secondsBetweenPlaybackBeats(
     return 0;
   }
 
+  const span = toBeat - fromBeat;
+  // For short spans (typical note durations), use single tempo calculation
+  if (span <= 1) {
+    const sourceBeat = sourceBeatAt(events, fromBeat);
+    const tempo = tempoAtSourceBeat(score, sourceBeat);
+    return span / beatRateForTempo(tempo, speed);
+  }
+
+  // For longer spans, use 0.5 beat steps (was 0.25)
   let seconds = 0;
   let cursor = fromBeat;
   while (cursor < toBeat - 0.0001) {
-    const next = Math.min(toBeat, cursor + 0.25);
+    const next = Math.min(toBeat, cursor + 0.5);
     const sourceBeat = sourceBeatAt(events, cursor);
     const tempo = tempoAtSourceBeat(score, sourceBeat);
     seconds += (next - cursor) / beatRateForTempo(tempo, speed);
@@ -92,7 +101,7 @@ function playbackBeatAfterSeconds(
   while (remainingSeconds > 0 && cursor < endLimit - 0.0001) {
     const tempo = tempoAtSourceBeat(score, sourceBeatAt(events, cursor));
     const beatRate = beatRateForTempo(tempo, speed);
-    const maxStepBeats = Math.min(0.25, endLimit - cursor);
+    const maxStepBeats = Math.min(0.5, endLimit - cursor);
     const maxStepSeconds = maxStepBeats / beatRate;
     if (remainingSeconds <= maxStepSeconds) {
       return cursor + remainingSeconds * beatRate;
@@ -118,7 +127,7 @@ function playbackBeatBeforeSeconds(
   while (remainingSeconds > 0 && cursor > 0.0001) {
     const tempo = tempoAtSourceBeat(score, sourceBeatAt(events, cursor));
     const beatRate = beatRateForTempo(tempo, speed);
-    const maxStepBeats = Math.min(0.25, cursor);
+    const maxStepBeats = Math.min(0.5, cursor);
     const maxStepSeconds = maxStepBeats / beatRate;
     if (remainingSeconds <= maxStepSeconds) {
       return Math.max(0, cursor - remainingSeconds * beatRate);

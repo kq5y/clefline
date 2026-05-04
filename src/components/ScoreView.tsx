@@ -64,8 +64,9 @@ const SCORE_ROW_GAP_PX = 140;
 const SCORE_ROW_WRAP_THRESHOLD_RATIO = 0.22;
 const HIGHLIGHT_UPDATE_INTERVAL_MS = 50;
 const SCROLL_UPDATE_THRESHOLD_PX = 1;
-const POSITION_BUILD_MIN_IDLE_MS = 4;
-const POSITION_BUILD_FALLBACK_STEPS = 8;
+const POSITION_BUILD_MIN_IDLE_MS = 2;
+const POSITION_BUILD_FALLBACK_STEPS = 16;
+const POSITION_BUILD_BATCH_SIZE = 4;
 
 const COLOR_NOTE_OPTIONS = {
   applyToBeams: true,
@@ -272,20 +273,25 @@ function startScorePositionBuild(
     const contentOffset = getContentOffset();
     const viewOrigin = view.getBoundingClientRect();
     let processed = 0;
+    const maxSteps = deadline ? MAX_CURSOR_STEPS : POSITION_BUILD_FALLBACK_STEPS;
     while (steps < MAX_CURSOR_STEPS && !primaryCursor.Iterator.EndReached) {
       if (deadline && processed > 0 && deadline.timeRemaining() < POSITION_BUILD_MIN_IDLE_MS) {
         break;
       }
-      if (!deadline && processed >= POSITION_BUILD_FALLBACK_STEPS) {
+      if (!deadline && processed >= maxSteps) {
         break;
       }
 
-      collectScorePosition(cursors, primaryCursor, view, viewOrigin, contentOffset, positions, seenBeats, noteSet);
-      for (const cursor of cursors) {
-        cursor.next();
+      // Process batch of steps with single viewOrigin read
+      const batchEnd = Math.min(steps + POSITION_BUILD_BATCH_SIZE, MAX_CURSOR_STEPS);
+      while (steps < batchEnd && !primaryCursor.Iterator.EndReached) {
+        collectScorePosition(cursors, primaryCursor, view, viewOrigin, contentOffset, positions, seenBeats, noteSet);
+        for (const cursor of cursors) {
+          cursor.next();
+        }
+        steps += 1;
       }
-      processed += 1;
-      steps += 1;
+      processed += POSITION_BUILD_BATCH_SIZE;
     }
 
     if (steps >= MAX_CURSOR_STEPS || primaryCursor.Iterator.EndReached) {

@@ -6,8 +6,8 @@ import {
   usePracticeStore,
 } from "../store/practiceStore";
 
-const HIDDEN_COMMIT_MS = 250;
-const VISIBLE_COMMIT_MS = 50;
+const HIDDEN_COMMIT_MS = 300;
+const VISIBLE_COMMIT_MS = 66;
 
 export function usePlaybackClock(): void {
   const lastFrame = useRef<number | undefined>(undefined);

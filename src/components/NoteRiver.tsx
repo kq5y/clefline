@@ -122,6 +122,15 @@ function visualDurationBeats(note: NoteEvent): number {
   return isLongGrace(note) ? Math.max(0.24, Math.min(note.durationBeats || 0.28, 0.45)) : 0.14;
 }
 
+function isSortedByStartBeat(group: NoteEvent[]): boolean {
+  for (let i = 1; i < group.length; i += 1) {
+    if (group[i - 1].startBeat > group[i].startBeat) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function buildTiedVisualDurationMap(notes: NoteEvent[]): Map<string, number> {
   const groups = new Map<string, NoteEvent[]>();
   const durations = new Map<string, number>();
@@ -142,7 +151,11 @@ function buildTiedVisualDurationMap(notes: NoteEvent[]): Map<string, number> {
   for (const group of groups.values()) {
     let chainStart: NoteEvent | undefined;
     let chainDuration = 0;
-    for (const note of group.toSorted((a, b) => a.startBeat - b.startBeat)) {
+    const sorted =
+      group.length <= 1 || isSortedByStartBeat(group)
+        ? group
+        : group.toSorted((a, b) => a.startBeat - b.startBeat);
+    for (const note of sorted) {
       chainStart ??= note;
       chainDuration += visualDurationBeats(note);
 
