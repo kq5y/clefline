@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { pianoKeyLayoutForMidi, type PianoKeyLayout } from "../lib/pianoLayout";
-import { buildGlissandoSegments } from "../lib/musicxml/glissando";
 import {
   createPlaybackDisplayAnchor,
   displayPlaybackBeat,
@@ -8,14 +7,14 @@ import {
 } from "../lib/playbackDisplayPosition";
 import {
   minimumPositionBeats,
-  sourceBeatAt,
   usePracticeStore,
   type HandMode,
 } from "../store/practiceStore";
-import type { Hand, NoteEvent, ScoreModel } from "../lib/musicxml";
+import type { Hand, NoteEvent, PlaybackEvent, ScoreModel } from "../lib/musicxml";
 
 type NoteRiverProps = {
   score?: ScoreModel;
+  playbackEvents: PlaybackEvent[];
   handMode: HandMode;
   riverZoom: number;
   showMeasureLines: boolean;
@@ -106,76 +105,6 @@ function isLongGrace(note: NoteEvent): boolean {
   return note.notations.some((notation) => notation.type === "grace" && notation.value === "long");
 }
 
-function visualStartBeat(note: NoteEvent): number {
-  if (!note.isGrace) {
-    return note.startBeat;
-  }
-
-  return note.startBeat - (isLongGrace(note) ? 0.32 : 0.14);
-}
-
-function visualDurationBeats(note: NoteEvent): number {
-  if (!note.isGrace) {
-    return note.durationBeats;
-  }
-
-  return isLongGrace(note) ? Math.max(0.24, Math.min(note.durationBeats || 0.28, 0.45)) : 0.14;
-}
-
-function isSortedByStartBeat(group: NoteEvent[]): boolean {
-  for (let i = 1; i < group.length; i += 1) {
-    if (group[i - 1].startBeat > group[i].startBeat) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function buildTiedVisualDurationMap(notes: NoteEvent[]): Map<string, number> {
-  const groups = new Map<string, NoteEvent[]>();
-  const durations = new Map<string, number>();
-
-  for (const note of notes) {
-    if (!note.tieGroupId) {
-      continue;
-    }
-
-    const existing = groups.get(note.tieGroupId);
-    if (existing) {
-      existing.push(note);
-    } else {
-      groups.set(note.tieGroupId, [note]);
-    }
-  }
-
-  for (const group of groups.values()) {
-    let chainStart: NoteEvent | undefined;
-    let chainDuration = 0;
-    const sorted =
-      group.length <= 1 || isSortedByStartBeat(group)
-        ? group
-        : group.toSorted((a, b) => a.startBeat - b.startBeat);
-    for (const note of sorted) {
-      chainStart ??= note;
-      chainDuration += visualDurationBeats(note);
-
-      if (!note.tieStart) {
-        if (chainDuration > visualDurationBeats(chainStart)) {
-          durations.set(chainStart.id, chainDuration);
-        }
-        chainStart = undefined;
-        chainDuration = 0;
-      }
-    }
-
-    if (chainStart && chainDuration > visualDurationBeats(chainStart)) {
-      durations.set(chainStart.id, chainDuration);
-    }
-  }
-
-  return durations;
-}
-
 function lowerBoundByStart<T extends { startBeat: number }>(items: T[], beat: number): number {
   let low = 0;
   let high = items.length;
@@ -209,9 +138,7 @@ function upperBoundByStart<T extends { startBeat: number }>(items: T[], beat: nu
 }
 
 function currentDisplayBeat(): number {
-  const state = usePracticeStore.getState();
-
-  return sourceBeatAt(state.playbackEvents, state.positionBeats);
+  return usePracticeStore.getState().positionBeats;
 }
 
 function activeLabelNotesAt(
@@ -469,6 +396,7 @@ function drawRiverLayer(
 
 export const NoteRiver = memo(function NoteRiver({
   score,
+  playbackEvents,
   handMode,
   riverZoom,
   showMeasureLines,
@@ -489,53 +417,66 @@ export const NoteRiver = memo(function NoteRiver({
   const animationFrameRef = useRef<number | undefined>(undefined);
   const playbackAnchorRef = useRef<PlaybackDisplayAnchor>(createPlaybackDisplayAnchor());
   const visualScore = useMemo<VisualScore>(() => {
-    if (!score) {
+    if (!score || playbackEvents.length === 0) {
       return EMPTY_VISUAL_SCORE;
     }
 
     let maxDurationBeats = 0;
-    const tiedDurations = buildTiedVisualDurationMap(score.notes);
-    const notes = score.notes
-      .filter((note) => !note.tieStop)
-      .map((note) => {
-        const startBeat = visualStartBeat(note);
-        const durationBeats = tiedDurations.get(note.id) ?? visualDurationBeats(note);
+    const notes: VisualNote[] = [];
+
+    for (const event of playbackEvents) {
+      const graceOffset = event.notes.some((note) => note.isGrace)
+        ? event.notes.some(isLongGrace)
+          ? 0.32
+          : 0.14
+        : 0;
+
+      for (const note of event.notes) {
+        if (note.tieStop) {
+          continue;
+        }
+
+        const startBeat = event.absoluteBeat + graceOffset;
+        const durationBeats = event.durationBeats;
         const layout = pianoKeyLayoutForMidi(note.midi);
         maxDurationBeats = Math.max(maxDurationBeats, durationBeats);
 
-        return {
+        notes.push({
           durationBeats,
           endBeat: startBeat + durationBeats,
           layout,
           note,
           startBeat,
           x: layout.centerPercent - layout.noteWidthPercent / 2,
-        };
-      });
+        });
+      }
+    }
+
     notes.sort(
       (first, second) => first.startBeat - second.startBeat || first.note.midi - second.note.midi,
     );
-    const measures = [
-      { index: -1, number: "0", startBeat: minimumPositionBeats(score) },
-      ...score.measures,
-    ];
-    measures.sort((first, second) => first.startBeat - second.startBeat);
-    const glissandoSegments = buildGlissandoSegments(score.notes).map((segment) => {
-      const startLayout = pianoKeyLayoutForMidi(segment.startMidi);
-      const endLayout = pianoKeyLayoutForMidi(segment.endMidi);
 
-      return {
-        endBeat: visualStartBeat(segment.endNote),
-        endX: endLayout.centerPercent,
-        hand: segment.hand,
-        id: segment.id,
-        startBeat: visualStartBeat(segment.startNote),
-        startX: startLayout.centerPercent,
-      };
-    });
+    const measures: MeasureMarker[] = [
+      { index: -1, number: "0", startBeat: minimumPositionBeats(score) },
+    ];
+    let currentAbsoluteBeat = 0;
+    for (const measure of score.measures) {
+      measures.push({
+        index: measure.index,
+        number: measure.number,
+        startBeat: currentAbsoluteBeat + measure.startBeat,
+      });
+      if (measure.repeatEnd) {
+        currentAbsoluteBeat += measure.startBeat + measure.durationBeats;
+      }
+    }
+    measures.sort((first, second) => first.startBeat - second.startBeat);
+
+    // TODO: glissando segments need absoluteBeat mapping
+    const glissandoSegments: VisualGlissandoSegment[] = [];
 
     return { glissandoSegments, maxDurationBeats, measures, notes };
-  }, [score]);
+  }, [score, playbackEvents]);
 
   visualScoreRef.current = visualScore;
   handModeRef.current = handMode;
@@ -654,8 +595,7 @@ export const NoteRiver = memo(function NoteRiver({
 
     const update = (frameTime: number) => {
       const state = usePracticeStore.getState();
-      const playbackBeat = displayPlaybackBeat(state, playbackAnchorRef.current, frameTime);
-      const positionBeats = sourceBeatAt(state.playbackEvents, playbackBeat);
+      const positionBeats = displayPlaybackBeat(state, playbackAnchorRef.current, frameTime);
       latestPositionBeatRef.current = positionBeats;
       if (
         positionBeats < anchorBeatRef.current - REANCHOR_BEHIND_BEATS ||

@@ -14,6 +14,7 @@ function preloadScoreView(): void {
 
 const RiverPlaybackLayer = memo(function RiverPlaybackLayer() {
   const score = usePracticeStore((state) => state.score);
+  const playbackEvents = usePracticeStore((state) => state.playbackEvents);
   const handMode = usePracticeStore((state) => state.settings.handMode);
   const riverZoom = usePracticeStore((state) => state.settings.riverZoom);
   const showMeasureLines = usePracticeStore((state) => state.settings.showMeasureLines);
@@ -22,6 +23,7 @@ const RiverPlaybackLayer = memo(function RiverPlaybackLayer() {
   return (
     <NoteRiver
       score={score}
+      playbackEvents={playbackEvents}
       handMode={handMode}
       riverZoom={riverZoom}
       showMeasureLines={showMeasureLines}
