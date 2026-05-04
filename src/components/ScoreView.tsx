@@ -682,6 +682,12 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       osmd.EngravingRules.RehearsalMarkYOffsetDefault = 20;
       osmd.EngravingRules.RehearsalMarkYOffsetAddedForRehearsalMarks = 0;
       osmd.EngravingRules.RehearsalMarkFontSize = 11;
+      // Prevent narrow measures with whole notes
+      (osmd.EngravingRules as { MinimumMeasureWidth?: number }).MinimumMeasureWidth = 10;
+      // Add margin before bar lines to prevent note overlap
+      osmd.EngravingRules.MeasureRightMargin = 4.0;
+      // Increase spacing between notes
+      osmd.EngravingRules.VoiceSpacingAddendVexflow = 6.0;
       osmd.Zoom = 0.92;
     };
 

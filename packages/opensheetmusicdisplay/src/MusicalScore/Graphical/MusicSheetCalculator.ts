@@ -370,6 +370,10 @@ export abstract class MusicSheetCalculator {
                     }
                 }
                 minimumStaffEntriesWidth *= globalWidthFactor * measureWidthFactor;
+                // Enforce minimum measure width to prevent narrow measures with whole notes
+                if (this.rules.MinimumMeasureWidth > 0) {
+                    minimumStaffEntriesWidth = Math.max(minimumStaffEntriesWidth, this.rules.MinimumMeasureWidth);
+                }
                 //console.log(`min width for measure ${measures[0].MeasureNumber}: ${minimumStaffEntriesWidth}`);
                 MusicSheetCalculator.setMeasuresMinStaffEntriesWidth(measures, minimumStaffEntriesWidth);
                 // minLength = Math.max(minLength, minimumStaffEntriesWidth * 1.2 + maxInstructionsLength);

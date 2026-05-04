@@ -367,6 +367,8 @@ export class EngravingRules {
      */
     public FixedMeasureWidthFixedValue: number;
     public FixedMeasureWidthUseForPickupMeasures: boolean;
+    /** Minimum measure width to prevent measures with whole notes from being too narrow. */
+    public MinimumMeasureWidth: number;
     public DistanceBetweenVerticalSystemLines: number;
     public DistanceBetweenDotAndLine: number;
     public RepeatEndStartPadding: number;
@@ -869,6 +871,7 @@ export class EngravingRules {
         this.FixedMeasureWidth = false;
         this.FixedMeasureWidthFixedValue = undefined; // only set to a number x if the width should be always x
         this.FixedMeasureWidthUseForPickupMeasures = false;
+        this.MinimumMeasureWidth = 0; // 0 = no minimum, set to e.g. 4 to prevent narrow measures with whole notes
 
         // Line Widths
         this.MinimumCrossedBeamDifferenceMargin = 0.0001;
