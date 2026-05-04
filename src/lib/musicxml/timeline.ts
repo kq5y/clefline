@@ -28,9 +28,19 @@ function includeHand(note: NoteEvent, handMode: TimelineOptions["handMode"]): bo
 }
 
 function notationLabels(notes: NoteEvent[]): string[] {
-  return Array.from(
-    new Set(notes.flatMap((note) => note.notations.map((notation) => notation.type))),
-  );
+  const labels: string[] = [];
+  const seen = new Set<string>();
+
+  for (const note of notes) {
+    for (const notation of note.notations) {
+      if (!seen.has(notation.type)) {
+        seen.add(notation.type);
+        labels.push(notation.type);
+      }
+    }
+  }
+
+  return labels;
 }
 
 const DYNAMIC_VELOCITY: Record<string, number> = {
@@ -66,18 +76,54 @@ function dynamicVelocity(direction: DirectionEvent): number | undefined {
   return DYNAMIC_VELOCITY[directionText(direction)];
 }
 
-function baseDynamicVelocityAt(score: ScoreModel, beat: number): number {
-  let velocity = 0.72;
+function directionIndexAtOrBefore(directions: DirectionEvent[], beat: number): number {
+  let low = 0;
+  let high = directions.length - 1;
+  let match = -1;
 
-  for (const direction of score.directions) {
-    if (direction.beat > beat) {
-      continue;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (directions[middle].beat <= beat) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
     }
-
-    velocity = dynamicVelocity(direction) ?? velocity;
   }
 
-  return velocity;
+  return match;
+}
+
+function baseDynamicVelocityAt(score: ScoreModel, beat: number): number {
+  const index = directionIndexAtOrBefore(score.directions, beat);
+  if (index < 0) {
+    return 0.72;
+  }
+
+  for (let i = index; i >= 0; i -= 1) {
+    const velocity = dynamicVelocity(score.directions[i]);
+    if (velocity !== undefined) {
+      return velocity;
+    }
+  }
+
+  return 0.72;
+}
+
+function directionIndexAfter(directions: DirectionEvent[], beat: number): number {
+  let low = 0;
+  let high = directions.length;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (directions[middle].beat <= beat) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  return low;
 }
 
 function nextExplicitDynamicVelocity(
@@ -85,30 +131,49 @@ function nextExplicitDynamicVelocity(
   startBeat: number,
   endBeat: number,
 ): number | undefined {
-  const direction = score.directions.find(
-    (item) => item.beat > startBeat && item.beat <= endBeat && dynamicVelocity(item) !== undefined,
-  );
+  const startIndex = directionIndexAfter(score.directions, startBeat);
+  for (let i = startIndex; i < score.directions.length; i += 1) {
+    const direction = score.directions[i];
+    if (direction.beat > endBeat) {
+      break;
+    }
+    const velocity = dynamicVelocity(direction);
+    if (velocity !== undefined) {
+      return velocity;
+    }
+  }
 
-  return direction ? dynamicVelocity(direction) : undefined;
+  return undefined;
 }
 
 function wedgeVelocityAt(score: ScoreModel, beat: number, baseVelocity: number): number {
-  const wedgeStart = score.directions.findLast(
-    (direction) =>
+  const index = directionIndexAtOrBefore(score.directions, beat);
+  let wedgeStart: DirectionEvent | undefined;
+
+  for (let i = index; i >= 0; i -= 1) {
+    const direction = score.directions[i];
+    if (
       direction.kind === "wedge" &&
-      direction.beat <= beat &&
-      !["stop", "continue"].includes(directionText(direction)),
-  );
+      !["stop", "continue"].includes(directionText(direction))
+    ) {
+      wedgeStart = direction;
+      break;
+    }
+  }
+
   if (!wedgeStart) {
     return baseVelocity;
   }
 
-  const wedgeStop = score.directions.find(
-    (direction) =>
-      direction.kind === "wedge" &&
-      direction.beat > wedgeStart.beat &&
-      directionText(direction) === "stop",
-  );
+  const stopStartIndex = directionIndexAfter(score.directions, wedgeStart.beat);
+  let wedgeStop: DirectionEvent | undefined;
+  for (let i = stopStartIndex; i < score.directions.length; i += 1) {
+    const direction = score.directions[i];
+    if (direction.kind === "wedge" && directionText(direction) === "stop") {
+      wedgeStop = direction;
+      break;
+    }
+  }
   const endBeat = wedgeStop?.beat ?? wedgeStart.beat + 4;
   if (beat > endBeat) {
     return baseVelocity;
@@ -156,7 +221,12 @@ function buildTiedDurationMap(notes: NoteEvent[]): Map<string, number> {
       continue;
     }
 
-    groups.set(note.tieGroupId, [...(groups.get(note.tieGroupId) ?? []), note]);
+    const group = groups.get(note.tieGroupId);
+    if (group) {
+      group.push(note);
+    } else {
+      groups.set(note.tieGroupId, [note]);
+    }
   }
 
   for (const group of groups.values()) {
@@ -263,37 +333,44 @@ function buildSourcePlaybackEvents(
       arpeggioBeats.has(startKey) && !note.isGrace
         ? `${startKey}:arpeggio`
         : `${startKey}:${note.staff}:${note.voice}:${graceKey}`;
-    grouped.set(key, [...(grouped.get(key) ?? []), note]);
+    const group = grouped.get(key);
+    if (group) {
+      group.push(note);
+    } else {
+      grouped.set(key, [note]);
+    }
   }
 
-  const baseEvents = Array.from(grouped.values())
-    .map((notes, index) => {
-      const arpeggio = notes.some(isArpeggioNote);
-      const orderedNotes = arpeggio
-        ? notes.toSorted((a, b) =>
-            arpeggioDirection(notes) === "down" ? b.midi - a.midi : a.midi - b.midi,
-          )
-        : notes;
-      const first = orderedNotes[0];
-      const hand: Hand = notes.every((note) => note.hand === first.hand) ? first.hand : "unknown";
-      const sourceStartBeat = Math.min(...orderedNotes.map((note) => note.startBeat));
+  const baseEvents: PlaybackEvent[] = [];
+  let index = 0;
+  for (const notes of grouped.values()) {
+    const arpeggio = notes.some(isArpeggioNote);
+    const orderedNotes = arpeggio
+      ? notes.toSorted((a, b) =>
+          arpeggioDirection(notes) === "down" ? b.midi - a.midi : a.midi - b.midi,
+        )
+      : notes;
+    const first = orderedNotes[0];
+    const hand: Hand = notes.every((note) => note.hand === first.hand) ? first.hand : "unknown";
+    const sourceStartBeat = Math.min(...orderedNotes.map((note) => note.startBeat));
 
-      return {
-        id: `playback-${index}`,
-        absoluteBeat: sourceStartBeat - graceLeadInBeats(orderedNotes),
-        sourceStartBeat,
-        durationBeats: performanceDuration(orderedNotes, tiedDurations),
-        noteEventIds: orderedNotes.map((note) => note.id),
-        notes: orderedNotes,
-        measureNumber: first.measureNumber,
-        staff: first.staff,
-        hand,
-        velocity: performanceVelocity(score, orderedNotes),
-        rollOffsetBeats: arpeggio ? 0.055 : 0,
-        notationLabels: notationLabels(orderedNotes),
-      };
-    })
-    .toSorted((a, b) => a.absoluteBeat - b.absoluteBeat || a.notes[0].midi - b.notes[0].midi);
+    baseEvents.push({
+      id: `playback-${index}`,
+      absoluteBeat: sourceStartBeat - graceLeadInBeats(orderedNotes),
+      sourceStartBeat,
+      durationBeats: performanceDuration(orderedNotes, tiedDurations),
+      noteEventIds: orderedNotes.map((note) => note.id),
+      notes: orderedNotes,
+      measureNumber: first.measureNumber,
+      staff: first.staff,
+      hand,
+      velocity: performanceVelocity(score, orderedNotes),
+      rollOffsetBeats: arpeggio ? 0.055 : 0,
+      notationLabels: notationLabels(orderedNotes),
+    });
+    index += 1;
+  }
+  baseEvents.sort((a, b) => a.absoluteBeat - b.absoluteBeat || a.notes[0].midi - b.notes[0].midi);
 
   return withGlissandoPlayback(score, options, baseEvents);
 }
@@ -361,9 +438,10 @@ function withGlissandoPlayback(
     }
   }
 
-  return [...events, ...glissandoEvents].toSorted(
-    (a, b) => a.absoluteBeat - b.absoluteBeat || a.notes[0].midi - b.notes[0].midi,
-  );
+  const combined = events.concat(glissandoEvents);
+  combined.sort((a, b) => a.absoluteBeat - b.absoluteBeat || a.notes[0].midi - b.notes[0].midi);
+
+  return combined;
 }
 
 function directionValue(direction: DirectionEvent): string {
@@ -563,10 +641,12 @@ export function buildMetronomeClicks(score: ScoreModel): MetronomeClick[] {
     }
   }
 
-  return clicks.toSorted(
+  clicks.sort(
     (first, second) =>
       first.absoluteBeat - second.absoluteBeat || first.sourceBeat - second.sourceBeat,
   );
+
+  return clicks;
 }
 
 function expandNavigation(score: ScoreModel, events: PlaybackEvent[]): PlaybackEvent[] {
@@ -593,9 +673,9 @@ function expandNavigation(score: ScoreModel, events: PlaybackEvent[]): PlaybackE
     );
   }
 
-  return expanded.toSorted(
-    (a, b) => a.absoluteBeat - b.absoluteBeat || a.notes[0].midi - b.notes[0].midi,
-  );
+  expanded.sort((a, b) => a.absoluteBeat - b.absoluteBeat || a.notes[0].midi - b.notes[0].midi);
+
+  return expanded;
 }
 
 export function buildPlaybackEvents(

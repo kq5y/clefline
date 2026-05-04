@@ -131,9 +131,9 @@ function buildTiedVisualDurationMap(notes: NoteEvent[]): Map<string, number> {
       continue;
     }
 
-    const group = groups.get(note.tieGroupId);
-    if (group) {
-      group.push(note);
+    const existing = groups.get(note.tieGroupId);
+    if (existing) {
+      existing.push(note);
     } else {
       groups.set(note.tieGroupId, [note]);
     }
@@ -498,14 +498,15 @@ export const NoteRiver = memo(function NoteRiver({
           startBeat,
           x: layout.centerPercent - layout.noteWidthPercent / 2,
         };
-      })
-      .toSorted(
-        (first, second) => first.startBeat - second.startBeat || first.note.midi - second.note.midi,
-      );
+      });
+    notes.sort(
+      (first, second) => first.startBeat - second.startBeat || first.note.midi - second.note.midi,
+    );
     const measures = [
       { index: -1, number: "0", startBeat: minimumPositionBeats(score) },
       ...score.measures,
-    ].toSorted((first, second) => first.startBeat - second.startBeat);
+    ];
+    measures.sort((first, second) => first.startBeat - second.startBeat);
     const glissandoSegments = buildGlissandoSegments(score.notes).map((segment) => {
       const startLayout = pianoKeyLayoutForMidi(segment.startMidi);
       const endLayout = pianoKeyLayoutForMidi(segment.endMidi);

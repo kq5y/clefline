@@ -112,12 +112,11 @@ export const Controls = memo(function Controls() {
   };
   const activeNotes = activeMidiAt(playbackEvents, positionBeats).length;
   const loop = loopBounds(score, settings);
+  const sourceBeat = sourceBeatAt(playbackEvents, positionBeats);
   const currentMeasure =
-    sourceBeatAt(playbackEvents, positionBeats) < 0
+    sourceBeat < 0
       ? "0"
-      : (score?.measures.findLast(
-          (measure) => measure.startBeat <= sourceBeatAt(playbackEvents, positionBeats),
-        )?.number ?? "1");
+      : (score?.measures.findLast((measure) => measure.startBeat <= sourceBeat)?.number ?? "1");
   const onPlayClick = async () => {
     if (isPlaying) {
       togglePlaying();

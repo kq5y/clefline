@@ -72,9 +72,19 @@ const OSMD_HALFTONE_TO_MIDI_OFFSET = 12;
 const MAX_CURSOR_STEPS = 12_000;
 const SCORE_ROW_GAP_PX = 140;
 const SCORE_ROW_WRAP_THRESHOLD_RATIO = 0.22;
-const HIGHLIGHT_UPDATE_INTERVAL_MS = 45;
-const POSITION_BUILD_MIN_IDLE_MS = 8;
-const POSITION_BUILD_FALLBACK_STEPS = 24;
+const HIGHLIGHT_UPDATE_INTERVAL_MS = 50;
+const SCROLL_UPDATE_THRESHOLD_PX = 1;
+const POSITION_BUILD_MIN_IDLE_MS = 4;
+const POSITION_BUILD_FALLBACK_STEPS = 8;
+
+const COLOR_NOTE_OPTIONS = {
+  applyToBeams: true,
+  applyToFlag: true,
+  applyToLedgerLines: true,
+  applyToModifiers: false,
+  applyToNoteheads: true,
+  applyToStem: true,
+};
 
 function visibleCursorElement(view: HTMLDivElement): HTMLElement | undefined {
   const cursor =
@@ -138,20 +148,28 @@ function collectScorePosition(
   cursors: OSMDInstance["cursors"],
   primaryCursor: OSMDInstance["cursor"],
   view: HTMLDivElement,
+  viewOrigin: ViewOrigin,
   contentOffset: ScoreOffset,
   positions: ScorePosition[],
   seenBeats: Set<string>,
+  noteSet: Set<ColorableGraphicalNote>,
 ): void {
   const beat = primaryCursor.Iterator.CurrentSourceTimestamp.RealValue * OSMD_BEAT_FACTOR;
   const beatKey = beat.toFixed(5);
-  const notes = Array.from(
-    new Set(cursors.flatMap((cursor) => cursor.GNotesUnderCursor() as ColorableGraphicalNote[])),
-  );
-  const viewOrigin = view.getBoundingClientRect();
+  if (seenBeats.has(beatKey)) {
+    return;
+  }
+  noteSet.clear();
+  for (const cursor of cursors) {
+    for (const note of cursor.GNotesUnderCursor() as ColorableGraphicalNote[]) {
+      noteSet.add(note);
+    }
+  }
+  const notes = Array.from(noteSet);
   const point =
     pointForGraphicalNotes(notes, view, viewOrigin, contentOffset) ??
     cursorPointInView(view, viewOrigin, contentOffset);
-  if (!point || seenBeats.has(beatKey)) {
+  if (!point) {
     return;
   }
 
@@ -224,12 +242,12 @@ function normalizeScoreRows(
 function schedulePositionBuild(callback: (deadline?: IdleDeadline) => void): () => void {
   const idleWindow = window;
   if (idleWindow.requestIdleCallback && idleWindow.cancelIdleCallback) {
-    const id = idleWindow.requestIdleCallback(callback, { timeout: 700 });
+    const id = idleWindow.requestIdleCallback(callback, { timeout: 200 });
 
     return () => idleWindow.cancelIdleCallback(id);
   }
 
-  const id = window.setTimeout(() => callback(), 80);
+  const id = window.setTimeout(() => callback(), 16);
 
   return () => window.clearTimeout(id);
 }
@@ -244,6 +262,7 @@ function startScorePositionBuild(
   const primaryCursor = cursors[0];
   const positions: ScorePosition[] = [];
   const seenBeats = new Set<string>();
+  const noteSet = new Set<ColorableGraphicalNote>();
   let cancelled = false;
   let steps = 0;
   let cancelSchedule: (() => void) | undefined;
@@ -259,6 +278,7 @@ function startScorePositionBuild(
     }
 
     const contentOffset = getContentOffset();
+    const viewOrigin = view.getBoundingClientRect();
     let processed = 0;
     while (steps < MAX_CURSOR_STEPS && !primaryCursor.Iterator.EndReached) {
       if (deadline && processed > 0 && deadline.timeRemaining() < POSITION_BUILD_MIN_IDLE_MS) {
@@ -268,7 +288,7 @@ function startScorePositionBuild(
         break;
       }
 
-      collectScorePosition(cursors, primaryCursor, view, contentOffset, positions, seenBeats);
+      collectScorePosition(cursors, primaryCursor, view, viewOrigin, contentOffset, positions, seenBeats, noteSet);
       for (const cursor of cursors) {
         cursor.next();
       }
@@ -347,18 +367,9 @@ function scorePositionForBeat(
 }
 
 function colorScoreNotes(notes: ColorableGraphicalNote[], color: string): void {
-  const options = {
-    applyToBeams: true,
-    applyToFlag: true,
-    applyToLedgerLines: true,
-    applyToModifiers: false,
-    applyToNoteheads: true,
-    applyToStem: true,
-  };
-
   for (const note of notes) {
     try {
-      note.setColor(color, options);
+      note.setColor(color, COLOR_NOTE_OPTIONS);
     } catch {
       // OSMD can invalidate graphical note references during teardown.
     }
@@ -575,8 +586,8 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
         Math.max(0, (currentPosition?.y ?? 0) - bounds.viewHeight * 0.42),
       );
       if (
-        Math.abs(scoreOffsetRef.current.x - targetScrollX) > 0.25 ||
-        Math.abs(scoreOffsetRef.current.y - targetScrollY) > 0.25
+        Math.abs(scoreOffsetRef.current.x - targetScrollX) > SCROLL_UPDATE_THRESHOLD_PX ||
+        Math.abs(scoreOffsetRef.current.y - targetScrollY) > SCROLL_UPDATE_THRESHOLD_PX
       ) {
         setScoreOffset({ x: targetScrollX, y: targetScrollY });
       }
@@ -763,18 +774,52 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     }
 
     startScorePositionIndexBuild();
+
     const frame = (frameTime: number) => {
       const state = usePracticeStore.getState();
+      if (!state.isPlaying) {
+        animationFrameRef.current = undefined;
+        return;
+      }
       if (scorePositionsRef.current.length === 0) {
         startScorePositionIndexBuild();
       }
+
       const positionBeats = displayPlaybackBeat(state, playbackAnchorRef.current, frameTime);
-      updateScorePosition(sourceBeatAt(state.playbackEvents, positionBeats), frameTime);
+      const sourceBeat = sourceBeatAt(state.playbackEvents, positionBeats);
+      updateScorePosition(sourceBeat, frameTime);
       animationFrameRef.current = window.requestAnimationFrame(frame);
     };
-    animationFrameRef.current = window.requestAnimationFrame(frame);
+
+    const startAnimation = () => {
+      if (animationFrameRef.current === undefined) {
+        animationFrameRef.current = window.requestAnimationFrame(frame);
+      }
+    };
+
+    const handleStoreChange = (state: ReturnType<typeof usePracticeStore.getState>) => {
+      if (state.isPlaying) {
+        startAnimation();
+      } else {
+        const sourceBeat = sourceBeatAt(state.playbackEvents, state.positionBeats);
+        updateScorePosition(sourceBeat, window.performance.now());
+      }
+    };
+
+    const currentState = usePracticeStore.getState();
+    handleStoreChange(currentState);
+    const unsubscribe = usePracticeStore.subscribe((nextState, prevState) => {
+      if (
+        nextState.isPlaying !== prevState.isPlaying ||
+        nextState.positionBeats !== prevState.positionBeats ||
+        nextState.playbackEvents !== prevState.playbackEvents
+      ) {
+        handleStoreChange(nextState);
+      }
+    });
 
     return () => {
+      unsubscribe();
       if (animationFrameRef.current !== undefined) {
         window.cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = undefined;

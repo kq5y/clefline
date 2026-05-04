@@ -201,14 +201,17 @@ function tempoChanges(score: ScoreModel): Array<{ beat: number; tempo: number }>
     return cached;
   }
 
-  const changes = score.directions
-    .filter((direction) => direction.kind === "tempo")
-    .flatMap((direction) => {
-      const tempo = Number(direction.value);
-
-      return Number.isFinite(tempo) && tempo > 0 ? [{ beat: direction.beat, tempo }] : [];
-    })
-    .toSorted((first, second) => first.beat - second.beat);
+  const changes: Array<{ beat: number; tempo: number }> = [];
+  for (const direction of score.directions) {
+    if (direction.kind !== "tempo") {
+      continue;
+    }
+    const tempo = Number(direction.value);
+    if (Number.isFinite(tempo) && tempo > 0) {
+      changes.push({ beat: direction.beat, tempo });
+    }
+  }
+  changes.sort((first, second) => first.beat - second.beat);
   tempoChangesCache.set(score, changes);
 
   return changes;

@@ -38,6 +38,8 @@ type AudioBackend = {
 export type PianoAudioBackend = AudioBackend;
 
 let backendPromise: Promise<AudioBackend> | undefined;
+let lastInstrumentVolume = Number.NaN;
+let lastMetronomeVolume = Number.NaN;
 
 function volumeToDb(volume: number): number {
   return volume <= 0 ? -60 : 20 * Math.log10(volume);
@@ -113,7 +115,11 @@ export function scheduleMidiOnBackend(
   velocity: number,
   masterVolume = 1,
 ): void {
-  backend.instrument.volume.value = volumeToDb(clampVolume(masterVolume));
+  const clamped = clampVolume(masterVolume);
+  if (clamped !== lastInstrumentVolume) {
+    lastInstrumentVolume = clamped;
+    backend.instrument.volume.value = volumeToDb(clamped);
+  }
   backend.instrument.triggerAttackRelease(
     midiToPitchName(midi),
     Math.max(0.05, durationSeconds),
@@ -139,7 +145,11 @@ export function scheduleMetronomeClickOnBackend(
   accented: boolean,
   volume: number,
 ): void {
-  backend.metronome.volume.value = volumeToDb(Math.max(0.01, volume));
+  const clamped = Math.max(0.01, volume);
+  if (clamped !== lastMetronomeVolume) {
+    lastMetronomeVolume = clamped;
+    backend.metronome.volume.value = volumeToDb(clamped);
+  }
   backend.metronome.triggerAttackRelease(
     accented ? "C7" : "C5",
     accented ? 0.055 : 0.038,

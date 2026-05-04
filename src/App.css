@@ -503,6 +503,7 @@ input:focus-visible {
   position: absolute;
   inset: 0;
   overflow: hidden;
+  contain: strict;
 }
 
 .score-track {
@@ -513,6 +514,7 @@ input:focus-visible {
   min-width: 100%;
   min-height: 100%;
   will-change: transform;
+  contain: layout style;
 }
 
 .score-canvas {
@@ -521,6 +523,8 @@ input:focus-visible {
   min-height: 100%;
   padding: 68px 58vw 42vh 42vw;
   box-sizing: content-box;
+  contain: layout style;
+  pointer-events: none;
 }
 
 .score-glissando-overlay {
@@ -532,6 +536,7 @@ input:focus-visible {
   min-height: 100%;
   overflow: visible;
   pointer-events: none;
+  contain: layout style;
 }
 
 .score-glissando-line {
