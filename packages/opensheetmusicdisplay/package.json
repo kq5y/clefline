@@ -1,0 +1,42 @@
+{
+  "name": "@piano-river/opensheetmusicdisplay",
+  "version": "1.9.7-async.1",
+  "description": "OSMD fork with async rendering support",
+  "main": "build/opensheetmusicdisplay.min.js",
+  "module": "build/opensheetmusicdisplay.min.js",
+  "types": "build/dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/dist/src/index.d.ts",
+      "import": "./build/opensheetmusicdisplay.min.js",
+      "require": "./build/opensheetmusicdisplay.min.js"
+    }
+  },
+  "scripts": {
+    "prebuild": "ncp src/VexFlowPatch/src/ node_modules/vexflow/src/",
+    "build": "webpack --progress --config webpack.prod.js",
+    "build:dev": "webpack --progress --config webpack.dev.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opensheetmusicdisplay/opensheetmusicdisplay"
+  },
+  "author": "PhonicScore",
+  "license": "BSD-3-Clause",
+  "dependencies": {
+    "@types/vexflow": "^1.2.38",
+    "jszip": "3.10.1",
+    "loglevel": "^1.8.0",
+    "typescript-collections": "^1.3.3",
+    "vexflow": "1.2.93"
+  },
+  "devDependencies": {
+    "clean-webpack-plugin": "^4.0.0",
+    "ncp": "^2.0.0",
+    "ts-loader": "^9.2.6",
+    "typescript": "5.8.2",
+    "webpack": "^5.64.4",
+    "webpack-cli": "^4.9.1",
+    "webpack-merge": "^5.8.0"
+  }
+}
