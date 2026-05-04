@@ -3,6 +3,7 @@ import type { OpenSheetMusicDisplay as OSMDInstance } from "opensheetmusicdispla
 import { sanitizeScoreDisplayXml } from "../lib/musicxml/displayXml";
 import { buildGlissandoSegments } from "../lib/musicxml/glissando";
 import { loadOsmd } from "../lib/osmd";
+import { loadAndRenderOsmdAsync } from "../lib/osmdAsync";
 import {
   createPlaybackDisplayAnchor,
   displayPlaybackBeat,
@@ -362,7 +363,7 @@ function scorePositionForBeat(
   return {
     index,
     x: current.x + (next.x - current.x) * progress,
-    y: current.y + (next.y - current.y) * progress,
+    y: current.y, // Y jumps instantly to current row, no interpolation
   };
 }
 
@@ -540,6 +541,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     viewWidth: 0,
   });
   const [error, setError] = useState<string | undefined>();
+  const [loadingMessage, setLoadingMessage] = useState<string | undefined>();
   activeRef.current = active;
   const setScoreOffset = useCallback((offset: ScoreOffset) => {
     scoreOffsetRef.current = offset;
@@ -583,7 +585,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       );
       const targetScrollY = Math.min(
         maxScrollY,
-        Math.max(0, (currentPosition?.y ?? 0) - bounds.viewHeight * 0.42),
+        Math.max(0, (currentPosition?.y ?? 0) - bounds.viewHeight * 0.3),
       );
       if (
         Math.abs(scoreOffsetRef.current.x - targetScrollX) > SCROLL_UPDATE_THRESHOLD_PX ||
@@ -672,51 +674,71 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     };
     setScoreOffset({ x: 0, y: 0 });
     setError(undefined);
+    setLoadingMessage("Initializing...");
+
+    const configureOsmd = (osmd: OSMDInstance) => {
+      osmd.EngravingRules.RenderSingleHorizontalStaffline = true;
+      osmd.EngravingRules.RenderGlissandi = false;
+      osmd.EngravingRules.RehearsalMarkYOffsetDefault = 20;
+      osmd.EngravingRules.RehearsalMarkYOffsetAddedForRehearsalMarks = 0;
+      osmd.EngravingRules.RehearsalMarkFontSize = 11;
+      osmd.Zoom = 0.92;
+    };
+
+    const osmdOptions = {
+      backend: "svg" as const,
+      autoResize: false,
+      disableCursor: false,
+      followCursor: false,
+      cursorsOptions: [
+        { type: 1, color: "#e05842", alpha: 0.95, follow: false },
+        { type: 0, color: "#ffd166", alpha: 0.34, follow: false },
+      ],
+      drawComposer: false,
+      drawTitle: false,
+      drawingParameters: "compacttight" as const,
+      pageFormat: "Endless" as const,
+      renderSingleHorizontalStaffline: true,
+    };
+
+    const finishRender = (osmd: OSMDInstance) => {
+      osmd.enableOrDisableCursors(true);
+      for (const cursor of osmd.cursors.length > 0 ? osmd.cursors : [osmd.cursor]) {
+        cursor.reset();
+        cursor.hide();
+      }
+      osmdRef.current = osmd;
+      refreshScoreBounds();
+      const currentState = usePracticeStore.getState();
+      updateScorePosition(
+        sourceBeatAt(currentState.playbackEvents, currentState.positionBeats),
+        window.performance.now(),
+      );
+      if (activeRef.current) {
+        startScorePositionIndexBuild();
+      }
+      setLoadingMessage(undefined);
+    };
 
     void loadOsmd()
       .then(async ({ OpenSheetMusicDisplay }) => {
-        const osmd = new OpenSheetMusicDisplay(container, {
-          backend: "svg",
-          autoResize: false,
-          disableCursor: false,
-          followCursor: false,
-          cursorsOptions: [
-            { type: 1, color: "#e05842", alpha: 0.95, follow: false },
-            { type: 0, color: "#ffd166", alpha: 0.34, follow: false },
-          ],
-          drawComposer: false,
-          drawTitle: false,
-          drawingParameters: "compacttight",
-          pageFormat: "Endless",
-          renderSingleHorizontalStaffline: true,
+        if (cancelled) return;
+
+        const sanitizedXml = sanitizeScoreDisplayXml(score.rawXml);
+        const osmd = new OpenSheetMusicDisplay(container, osmdOptions);
+        configureOsmd(osmd);
+
+        await loadAndRenderOsmdAsync(osmd, sanitizedXml, (message, percent) => {
+          if (!cancelled) {
+            setLoadingMessage(`${message} (${percent}%)`);
+          }
         });
-        osmd.EngravingRules.RenderSingleHorizontalStaffline = true;
-        osmd.EngravingRules.RenderGlissandi = false;
-        osmd.EngravingRules.RehearsalMarkYOffsetDefault = 20;
-        osmd.EngravingRules.RehearsalMarkYOffsetAddedForRehearsalMarks = 0;
-        osmd.EngravingRules.RehearsalMarkFontSize = 11;
-        osmd.Zoom = 0.92;
-        await osmd.load(sanitizeScoreDisplayXml(score.rawXml));
-        if (!cancelled) {
-          osmd.render();
-          osmd.enableOrDisableCursors(true);
-          for (const cursor of osmd.cursors.length > 0 ? osmd.cursors : [osmd.cursor]) {
-            cursor.reset();
-            cursor.hide();
-          }
-          osmdRef.current = osmd;
-          refreshScoreBounds();
-          const currentState = usePracticeStore.getState();
-          updateScorePosition(
-            sourceBeatAt(currentState.playbackEvents, currentState.positionBeats),
-            window.performance.now(),
-          );
-          if (activeRef.current) {
-            startScorePositionIndexBuild();
-          }
-        }
+
+        if (cancelled) return;
+        finishRender(osmd);
       })
       .catch((reason: unknown) => {
+        setLoadingMessage(undefined);
         setError(
           `Notation render failed: ${
             reason instanceof Error ? reason.message : "Failed to render score."
@@ -843,6 +865,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     <div className="score-view">
       <div className="score-playback-line" aria-hidden="true" />
       {error ? <div className="score-error">{error}</div> : null}
+      {loadingMessage ? <div className="score-loading">{loadingMessage}</div> : null}
       <div className="score-scroll" ref={viewRef}>
         <div className="score-track" ref={trackRef}>
           <svg className="score-glissando-overlay" ref={glissandoOverlayRef} aria-hidden="true" />

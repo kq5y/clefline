@@ -580,6 +580,21 @@ input:focus-visible {
   color: #9f3d24;
 }
 
+.score-loading {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 1px solid rgb(0 0 0 / 12%);
+  border-radius: 999px;
+  padding: 4px 11px;
+  background: rgb(255 255 255 / 90%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  color: #30343c;
+  font-size: 12px;
+}
+
 .keyboard-shell {
   min-height: 0;
   border-top: 1px solid var(--line);
