@@ -29,3 +29,7 @@ bun.lock
 *.njsproj
 *.sln
 *.sw?
+
+# Editor/tool config
+.claude/
+.serena/
