@@ -24,7 +24,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build workspace packages
-        run: pnpm --filter @piano-river/opensheetmusicdisplay build
+        run: pnpm --filter @clefline/opensheetmusicdisplay build
 
       - name: Type check
         run: pnpm typecheck

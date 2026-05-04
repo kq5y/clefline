@@ -1,6 +1,6 @@
 # OSMD Fork Modifications
 
-This is a fork of [OpenSheetMusicDisplay](https://github.com/opensheetmusicdisplay/opensheetmusicdisplay) v1.9.7 with custom modifications for piano-river.
+This is a fork of [OpenSheetMusicDisplay](https://github.com/opensheetmusicdisplay/opensheetmusicdisplay) v1.9.7 with custom modifications for Clefline.
 
 ## Changes from upstream
 

@@ -18,7 +18,7 @@ importers:
         specifier: ^1.14.0
         version: 1.14.0(react@19.2.5)
       opensheetmusicdisplay:
-        specifier: workspace:@piano-river/opensheetmusicdisplay@*
+        specifier: workspace:@clefline/opensheetmusicdisplay@*
         version: link:packages/opensheetmusicdisplay
       react:
         specifier: ^19.2.5

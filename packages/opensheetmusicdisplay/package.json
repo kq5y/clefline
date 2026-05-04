@@ -1,5 +1,5 @@
 {
-  "name": "@piano-river/opensheetmusicdisplay",
+  "name": "@clefline/opensheetmusicdisplay",
   "version": "1.9.7-async.1",
   "description": "OSMD fork with async rendering support",
   "main": "build/opensheetmusicdisplay.min.js",

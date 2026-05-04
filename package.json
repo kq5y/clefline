@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "pnpm --filter @piano-river/opensheetmusicdisplay build && tsc -b && vite build",
+    "build": "pnpm --filter @clefline/opensheetmusicdisplay build && tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "lint": "oxlint src --react-plugin --jsx-a11y-plugin --import-plugin --vitest-plugin -D correctness -D suspicious -A react-in-jsx-scope -A no-unassigned-import",
@@ -20,7 +20,7 @@
     "fast-xml-parser": "^5.7.2",
     "jszip": "^3.10.1",
     "lucide-react": "^1.14.0",
-    "opensheetmusicdisplay": "workspace:@piano-river/opensheetmusicdisplay@*",
+    "opensheetmusicdisplay": "workspace:@clefline/opensheetmusicdisplay@*",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "tone": "^15.1.22",
