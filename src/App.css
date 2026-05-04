@@ -643,6 +643,23 @@ input:focus-visible {
   border-color: #7d4f40;
 }
 
+.panel-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: auto;
+  padding: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.panel-link:hover {
+  color: var(--text-secondary);
+}
+
 .toast-error,
 .toast-info {
   position: fixed;

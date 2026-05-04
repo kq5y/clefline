@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  ExternalLink,
   Info,
   Maximize,
   Minimize,
@@ -393,6 +394,15 @@ export const Controls = memo(function Controls() {
               <span>Hold Left / Right: Repeat measure movement</span>
               <span>Esc: Close this panel</span>
             </div>
+            <a
+              className="panel-link"
+              href="https://github.com/kq5y/clefline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink size={13} />
+              Contribute on GitHub
+            </a>
           </div>
         ) : null}
         {openPanel === "practice" ? (
