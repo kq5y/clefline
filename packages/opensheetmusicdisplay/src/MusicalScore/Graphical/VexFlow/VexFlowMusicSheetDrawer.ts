@@ -221,6 +221,7 @@ export class VexFlowMusicSheetDrawer extends MusicSheetDrawer {
             this.drawSlurs(staffLine as VexFlowStaffLine, absolutePos);
         }
         if (this.rules.RenderGlissandi) {
+            console.log("RenderGlissandi enabled, count:", (staffLine as VexFlowStaffLine).GraphicalGlissandi?.length ?? 0);
             this.drawGlissandi(staffLine as VexFlowStaffLine, absolutePos);
         }
         ctx.closeGroup();
@@ -242,22 +243,83 @@ export class VexFlowMusicSheetDrawer extends MusicSheetDrawer {
         }
     }
 
+    private drawGlissandoWavyLine(ctx: IRenderContext, startX: number, startY: number, endX: number, endY: number): void {
+        const dx: number = endX - startX;
+        const dy: number = endY - startY;
+        const length: number = Math.sqrt(dx * dx + dy * dy);
+
+        const glyphSpacing: number = 10;
+        const numGlyphs: number = Math.max(1, Math.floor(length / glyphSpacing));
+        const fontScale: number = 38;
+
+        ctx.save();
+        for (let i: number = 0; i < numGlyphs; i++) {
+            const t: number = (i + 0.5) / numGlyphs;
+            const x: number = startX + dx * t;
+            const y: number = startY + dy * t;
+
+            ctx.save();
+            (ctx as any).openGroup?.("glissando-glyph");
+            const svgCtx: any = ctx;
+            if (svgCtx.state) {
+                svgCtx.state.scale = { x: 1, y: 1 };
+            }
+
+            (VF.Glyph as any).renderGlyph(ctx, x - 4, y, fontScale, "va3");
+            (ctx as any).closeGroup?.();
+            ctx.restore();
+        }
+        ctx.restore();
+    }
+
     private drawGlissando(gGliss: GraphicalGlissando, abs: PointF2D): void {
         if (!gGliss.StaffLine.ParentStaff.isTab) {
             gGliss.calculateLine(this.rules);
         }
+        const ctx: IRenderContext = this.backend.getContext();
         if (gGliss.Line) {
             const newStart: PointF2D = new PointF2D(gGliss.Line.Start.x + abs.x, gGliss.Line.Start.y);
             const newEnd: PointF2D = new PointF2D(gGliss.Line.End.x + abs.x, gGliss.Line.End.y);
-            // note that we do not add abs.y, because GraphicalGlissando.calculateLine() uses AbsolutePosition for y,
-            //   because unfortunately RelativePosition seems imprecise.
-            gGliss.Line.SVGElement = this.drawLine(newStart, newEnd, gGliss.Color, gGliss.Width);
+            const startScreen: PointF2D = this.applyScreenTransformation(newStart);
+            const endScreen: PointF2D = this.applyScreenTransformation(newEnd);
+            this.drawGlissandoWavyLine(ctx, startScreen.x, startScreen.y, endScreen.x, endScreen.y);
         } else {
-            const vfTie: VF.StaveTie = (gGliss as VexFlowGlissando).vfTie;
+            const vfGliss: VexFlowGlissando = gGliss as VexFlowGlissando;
+            const vfTie: VF.StaveTie = vfGliss.vfTie;
             if (vfTie) {
-                const context: IRenderContext = this.backend.getContext();
-                vfTie.setContext(context);
-                vfTie.draw();
+                const tieNotes: any = (vfTie as any).notes;
+                if (tieNotes && (tieNotes.first_note || tieNotes.last_note)) {
+                    vfTie.setContext(ctx);
+                    const firstNote: any = tieNotes.first_note;
+                    const lastNote: any = tieNotes.last_note;
+                    let startX: number, startY: number, endX: number, endY: number;
+                    if (firstNote) {
+                        const firstIdx: number = tieNotes.first_indices?.[0] ?? 0;
+                        startX = firstNote.getAbsoluteX() + firstNote.getWidth();
+                        startY = firstNote.getYForTopText?.(firstIdx) ?? firstNote.getStave()?.getYForLine(0) ?? 0;
+                        const ys: number[] = firstNote.getYs?.();
+                        if (ys && ys[firstIdx] !== undefined) {
+                            startY = ys[firstIdx];
+                        }
+                    }
+                    if (lastNote) {
+                        const lastIdx: number = tieNotes.last_indices?.[0] ?? 0;
+                        endX = lastNote.getAbsoluteX();
+                        endY = lastNote.getYForTopText?.(lastIdx) ?? lastNote.getStave()?.getYForLine(0) ?? 0;
+                        const ys: number[] = lastNote.getYs?.();
+                        if (ys && ys[lastIdx] !== undefined) {
+                            endY = ys[lastIdx];
+                        }
+                    }
+                    if (startX !== undefined && endX !== undefined) {
+                        this.drawGlissandoWavyLine(ctx, startX, startY, endX, endY);
+                    } else {
+                        vfTie.draw();
+                    }
+                } else {
+                    vfTie.setContext(ctx);
+                    vfTie.draw();
+                }
             }
         }
     }

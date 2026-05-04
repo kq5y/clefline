@@ -640,11 +640,12 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
         positionBuildCancelRef.current = undefined;
         scorePositionsRef.current = positions;
         refreshScoreBounds();
-        renderGlissandoOverlays(
-          glissandoOverlayRef.current,
-          trackRef.current,
-          buildScoreGlissandoOverlays(score, positions, viewRef.current, contentOffset()),
-        );
+        // OSMD native glissando is now enabled, app-side overlay disabled
+        // renderGlissandoOverlays(
+        //   glissandoOverlayRef.current,
+        //   trackRef.current,
+        //   buildScoreGlissandoOverlays(score, positions, viewRef.current, contentOffset()),
+        // );
         const latestState = usePracticeStore.getState();
         updateScorePosition(
           sourceBeatAt(latestState.playbackEvents, latestState.positionBeats),
@@ -678,7 +679,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
 
     const configureOsmd = (osmd: OSMDInstance) => {
       osmd.EngravingRules.RenderSingleHorizontalStaffline = true;
-      osmd.EngravingRules.RenderGlissandi = false;
+      osmd.EngravingRules.RenderGlissandi = true;
       osmd.EngravingRules.RehearsalMarkYOffsetDefault = 20;
       osmd.EngravingRules.RehearsalMarkYOffsetAddedForRehearsalMarks = 0;
       osmd.EngravingRules.RehearsalMarkFontSize = 11;

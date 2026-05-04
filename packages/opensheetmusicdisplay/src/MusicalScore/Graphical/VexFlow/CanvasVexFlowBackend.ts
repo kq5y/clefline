@@ -199,6 +199,50 @@ export class CanvasVexFlowBackend extends VexFlowBackend {
         return undefined;
     }
 
+    public renderWavyLine(start: PointF2D, stop: PointF2D, color: string = "#000000", lineWidth: number = 1,
+                          waveAmplitude: number = 2, waveLength: number = 4, id?: string): Node {
+        const ctx: CanvasRenderingContext2D = this.CanvasRenderingCtx;
+        const oldStyle: string | CanvasGradient | CanvasPattern = ctx.strokeStyle;
+        const oldLineWidth: number = ctx.lineWidth;
+
+        const dx: number = stop.x - start.x;
+        const dy: number = stop.y - start.y;
+        const length: number = Math.sqrt(dx * dx + dy * dy);
+        const angle: number = Math.atan2(dy, dx);
+
+        const waveHeight: number = 3.5;
+        const waveWidth: number = 5;
+        const numWaves: number = Math.max(1, Math.floor(length / waveWidth));
+        const actualWaveWidth: number = length / numWaves;
+
+        ctx.save();
+        ctx.translate(start.x, start.y);
+        ctx.rotate(angle);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.2;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+
+        for (let i: number = 0; i < numWaves; i++) {
+            const x0: number = i * actualWaveWidth;
+            const x1: number = x0 + actualWaveWidth * 0.25;
+            const x2: number = x0 + actualWaveWidth * 0.5;
+            const x3: number = x0 + actualWaveWidth * 0.75;
+            const x4: number = x0 + actualWaveWidth;
+
+            ctx.bezierCurveTo(x1, -waveHeight, x2, -waveHeight, x2, 0);
+            ctx.bezierCurveTo(x2, waveHeight, x3, waveHeight, x4, 0);
+        }
+
+        ctx.stroke();
+        ctx.restore();
+        ctx.strokeStyle = oldStyle;
+        ctx.lineWidth = oldLineWidth;
+        return undefined;
+    }
+
     private ctx: VF.CanvasContext;
 
     public get CanvasRenderingCtx(): CanvasRenderingContext2D {

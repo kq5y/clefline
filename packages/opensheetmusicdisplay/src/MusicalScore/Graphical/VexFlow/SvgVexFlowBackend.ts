@@ -247,6 +247,51 @@ export class SvgVexFlowBackend extends VexFlowBackend {
         return node;
     }
 
+    public renderWavyLine(start: PointF2D, stop: PointF2D, color: string = "#000000", lineWidth: number = 1,
+                          waveAmplitude: number = 2, waveLength: number = 4, id?: string): Node {
+        const dx: number = stop.x - start.x;
+        const dy: number = stop.y - start.y;
+        const length: number = Math.sqrt(dx * dx + dy * dy);
+        const angle: number = Math.atan2(dy, dx);
+        const angleDeg: number = angle * 180 / Math.PI;
+
+        const group: SVGGElement = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        if (id) {
+            group.setAttribute("id", id);
+        }
+        group.setAttribute("class", "vf-glissando");
+        group.setAttribute("transform", `translate(${start.x}, ${start.y}) rotate(${angleDeg})`);
+
+        const waveHeight: number = 3.5;
+        const waveWidth: number = 5;
+        const numWaves: number = Math.max(1, Math.floor(length / waveWidth));
+        const actualWaveWidth: number = length / numWaves;
+
+        let pathData: string = "M 0 0";
+        for (let i: number = 0; i < numWaves; i++) {
+            const x0: number = i * actualWaveWidth;
+            const x1: number = x0 + actualWaveWidth * 0.25;
+            const x2: number = x0 + actualWaveWidth * 0.5;
+            const x3: number = x0 + actualWaveWidth * 0.75;
+            const x4: number = x0 + actualWaveWidth;
+
+            pathData += ` C ${x1} ${-waveHeight}, ${x2} ${-waveHeight}, ${x2} 0`;
+            pathData += ` C ${x2} ${waveHeight}, ${x3} ${waveHeight}, ${x4} 0`;
+        }
+
+        const path: SVGPathElement = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", pathData);
+        path.setAttribute("stroke", color);
+        path.setAttribute("stroke-width", "1.2");
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+
+        group.appendChild(path);
+        this.ctx.svg.appendChild(group);
+        return group;
+    }
+
     public export(): void {
         // See: https://stackoverflow.com/questions/38477972/javascript-save-svg-element-to-file-on-disk
 

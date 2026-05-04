@@ -111,6 +111,8 @@ public abstract getContext(): Vex.IRenderContext;
 
   public abstract renderPath(points: PointF2D[], fill: boolean, id?: string): Node;
 
+  public abstract renderWavyLine(start: PointF2D, stop: PointF2D, color: string, lineWidth: number, waveAmplitude: number, waveLength: number, id?: string): Node;
+
   public abstract getVexflowBackendType(): VF.Renderer.Backends;
 
   /** The general type of backend: Canvas or SVG.
