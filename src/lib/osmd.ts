@@ -2,6 +2,6 @@ export function preloadOsmd(): void {
   void import("opensheetmusicdisplay");
 }
 
-export function loadOsmd() {
+export async function loadOsmd() {
   return import("opensheetmusicdisplay");
 }
