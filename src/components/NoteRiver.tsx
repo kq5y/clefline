@@ -9,6 +9,7 @@ import {
   minimumPositionBeats,
   usePracticeStore,
   type HandMode,
+  type NoteColors,
   type RiverRange,
 } from "../store/practiceStore";
 import type { Hand, NoteEvent, PlaybackEvent, ScoreModel } from "../lib/musicxml";
@@ -19,6 +20,7 @@ type NoteRiverProps = {
   handMode: HandMode;
   riverZoom: number;
   riverRange: RiverRange;
+  noteColors: NoteColors;
   showMeasureLines: boolean;
   showNoteNames: boolean;
 };
@@ -38,16 +40,35 @@ const MEASURE_LABEL_EDGE_PADDING_PX = 6;
 const NOTE_LABEL_UPDATE_MS = 60;
 const MAX_CANVAS_PIXEL_RATIO = 1.5;
 
-const NOTE_COLORS: Record<Hand, { black: string; white: string }> = {
-  left: { black: "#1f8093", white: "#52c7e8" },
-  right: { black: "#b85a3a", white: "#f7a56e" },
-  unknown: { black: "#8d6d25", white: "#d4a23c" },
-};
-const GLISSANDO_COLORS: Record<Hand, string> = {
-  left: "#83dcf4",
-  right: "#ffd0ad",
-  unknown: "#ffe099",
-};
+function darkenHex(hex: string, amount: number): string {
+  const r = Math.max(0, parseInt(hex.slice(1, 3), 16) - amount);
+  const g = Math.max(0, parseInt(hex.slice(3, 5), 16) - amount);
+  const b = Math.max(0, parseInt(hex.slice(5, 7), 16) - amount);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
+function lightenHex(hex: string, amount: number): string {
+  const r = Math.min(255, parseInt(hex.slice(1, 3), 16) + amount);
+  const g = Math.min(255, parseInt(hex.slice(3, 5), 16) + amount);
+  const b = Math.min(255, parseInt(hex.slice(5, 7), 16) + amount);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
+function buildNoteColors(noteColors: NoteColors): Record<Hand, { black: string; white: string }> {
+  return {
+    left: { black: darkenHex(noteColors.left, 50), white: noteColors.left },
+    right: { black: darkenHex(noteColors.right, 50), white: noteColors.right },
+    unknown: { black: "#8d6d25", white: "#d4a23c" },
+  };
+}
+
+function buildGlissandoColors(noteColors: NoteColors): Record<Hand, string> {
+  return {
+    left: lightenHex(noteColors.left, 30),
+    right: lightenHex(noteColors.right, 30),
+    unknown: "#ffe099",
+  };
+}
 
 type MeasureMarker = {
   index: number;
@@ -278,8 +299,11 @@ function drawRiverLayer(
   lookAheadBeats: number,
   handMode: HandMode,
   riverRange: RiverRange,
+  noteColors: NoteColors,
   showMeasureLines: boolean,
 ): void {
+  const NOTE_COLORS = buildNoteColors(noteColors);
+  const GLISSANDO_COLORS = buildGlissandoColors(noteColors);
   const context = canvas.getContext("2d");
   if (!context) {
     return;
@@ -420,6 +444,7 @@ export const NoteRiver = memo(function NoteRiver({
   handMode,
   riverZoom,
   riverRange,
+  noteColors,
   showMeasureLines,
   showNoteNames,
 }: NoteRiverProps) {
@@ -510,6 +535,8 @@ export const NoteRiver = memo(function NoteRiver({
   lookAheadBeatsRef.current = lookAheadBeats;
   const riverRangeRef = useRef(riverRange);
   riverRangeRef.current = riverRange;
+  const noteColorsRef = useRef(noteColors);
+  noteColorsRef.current = noteColors;
 
   const redrawLayer = useCallback((anchorBeat: number) => {
     const canvas = canvasRef.current;
@@ -524,6 +551,7 @@ export const NoteRiver = memo(function NoteRiver({
       lookAheadBeatsRef.current,
       handModeRef.current,
       riverRangeRef.current,
+      noteColorsRef.current,
       showMeasureLinesRef.current,
     );
   }, []);
@@ -614,7 +642,7 @@ export const NoteRiver = memo(function NoteRiver({
   useEffect(() => {
     reanchor(latestPositionBeatRef.current);
     updateActiveLabels(latestPositionBeatRef.current);
-  }, [handMode, lookAheadBeats, reanchor, riverRange, showMeasureLines, updateActiveLabels, visualScore]);
+  }, [handMode, lookAheadBeats, noteColors, reanchor, riverRange, showMeasureLines, updateActiveLabels, visualScore]);
 
   useEffect(() => {
     if (!score) {

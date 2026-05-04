@@ -1,11 +1,14 @@
 import {
   BookOpen,
   Info,
+  Maximize,
+  Minimize,
   Music2,
   PanelRight,
   Pause,
   Play,
   RotateCcw,
+  RotateCw,
   SlidersHorizontal,
   SkipBack,
   SkipForward,
@@ -25,6 +28,7 @@ import {
 import { ensurePianoEngine } from "../lib/audio/pianoEngine";
 import {
   activeMidiAt,
+  DEFAULT_NOTE_COLORS,
   handModeLabel,
   initialTempo,
   loopBounds,
@@ -75,6 +79,7 @@ function blurPointerButton(event: PointerEvent<HTMLElement>): void {
 
 export const Controls = memo(function Controls() {
   const [openPanel, setOpenPanel] = useState<"info" | "practice" | undefined>();
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const repeatDelayRef = useRef<number | undefined>(undefined);
   const repeatIntervalRef = useRef<number | undefined>(undefined);
   const score = usePracticeStore((state) => state.score);
@@ -192,6 +197,22 @@ export const Controls = memo(function Controls() {
 
   useEffect(() => stopMeasureRepeat, [stopMeasureRepeat]);
 
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else {
+      await document.documentElement.requestFullscreen();
+    }
+  }, []);
+
   return (
     <>
       <header className="topbar" onPointerUpCapture={blurPointerButton}>
@@ -293,6 +314,14 @@ export const Controls = memo(function Controls() {
           >
             <Info size={17} />
             Info
+          </button>
+          <button
+            type="button"
+            className="round-button"
+            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            onClick={() => void toggleFullscreen()}
+          >
+            {isFullscreen ? <Minimize size={17} /> : <Maximize size={17} />}
           </button>
         </div>
       </header>
@@ -518,6 +547,40 @@ export const Controls = memo(function Controls() {
               />
               Measure lines
             </label>
+            <div className="color-row">
+              <label className="color-control">
+                Left
+                <input
+                  type="color"
+                  value={settings.noteColors.left}
+                  onChange={(event) =>
+                    updateSettings({
+                      noteColors: { ...settings.noteColors, left: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="color-control">
+                Right
+                <input
+                  type="color"
+                  value={settings.noteColors.right}
+                  onChange={(event) =>
+                    updateSettings({
+                      noteColors: { ...settings.noteColors, right: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className="reset-colors-button"
+                onClick={() => updateSettings({ noteColors: { ...DEFAULT_NOTE_COLORS } })}
+                title="Reset colors"
+              >
+                <RotateCw size={14} />
+              </button>
+            </div>
           </div>
         ) : null}
       </aside>

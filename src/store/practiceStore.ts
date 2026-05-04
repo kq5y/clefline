@@ -20,11 +20,17 @@ export type RiverRange = {
   maxMidi: number;
 };
 
+export type NoteColors = {
+  left: string;
+  right: string;
+};
+
 export type PracticeSettings = {
   viewMode: ViewMode;
   speed: number;
   riverZoom: number;
   riverRange: RiverRange;
+  noteColors: NoteColors;
   showMeasureLines: boolean;
   loopEnabled: boolean;
   loopStartMeasure?: string;
@@ -61,11 +67,17 @@ type PracticeState = {
 
 const SETTINGS_STORAGE_KEY = "clefline.practiceSettings.v1";
 
+export const DEFAULT_NOTE_COLORS: NoteColors = {
+  left: "#52c7e8",
+  right: "#f7a56e",
+};
+
 const BASE_SETTINGS: PracticeSettings = {
   viewMode: "river",
   speed: 1,
   riverZoom: 1,
   riverRange: { minMidi: 21, maxMidi: 108 },
+  noteColors: { ...DEFAULT_NOTE_COLORS },
   showMeasureLines: true,
   loopEnabled: false,
   handMode: "both",
@@ -78,6 +90,7 @@ type PersistedPracticeSettings = Pick<
   PracticeSettings,
   | "handMode"
   | "metronomeEnabled"
+  | "noteColors"
   | "riverRange"
   | "riverZoom"
   | "showMeasureLines"
@@ -131,6 +144,26 @@ function riverRangeSetting(value: unknown, fallback: RiverRange): RiverRange {
   return fallback;
 }
 
+function isValidHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value);
+}
+
+function noteColorsSetting(value: unknown, fallback: NoteColors): NoteColors {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "left" in value &&
+    "right" in value
+  ) {
+    const colors = value as NoteColors;
+    return {
+      left: isValidHexColor(colors.left) ? colors.left : fallback.left,
+      right: isValidHexColor(colors.right) ? colors.right : fallback.right,
+    };
+  }
+  return fallback;
+}
+
 function readPersistedSettings(): Partial<PersistedPracticeSettings> {
   const item = storage()?.getItem(SETTINGS_STORAGE_KEY);
   if (!item) {
@@ -143,6 +176,7 @@ function readPersistedSettings(): Partial<PersistedPracticeSettings> {
     return {
       handMode: handModeSetting(data.handMode, BASE_SETTINGS.handMode),
       metronomeEnabled: booleanSetting(data.metronomeEnabled, BASE_SETTINGS.metronomeEnabled),
+      noteColors: noteColorsSetting(data.noteColors, BASE_SETTINGS.noteColors),
       riverRange: riverRangeSetting(data.riverRange, BASE_SETTINGS.riverRange),
       riverZoom: numberSetting(data.riverZoom, BASE_SETTINGS.riverZoom, 0.1, 2),
       showMeasureLines: booleanSetting(data.showMeasureLines, BASE_SETTINGS.showMeasureLines),
@@ -163,6 +197,7 @@ function persistSettings(settings: PracticeSettings): void {
       JSON.stringify({
         handMode: settings.handMode,
         metronomeEnabled: settings.metronomeEnabled,
+        noteColors: settings.noteColors,
         riverRange: settings.riverRange,
         riverZoom: settings.riverZoom,
         showMeasureLines: settings.showMeasureLines,

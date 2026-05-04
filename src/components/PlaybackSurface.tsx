@@ -18,6 +18,7 @@ const RiverPlaybackLayer = memo(function RiverPlaybackLayer() {
   const handMode = usePracticeStore((state) => state.settings.handMode);
   const riverZoom = usePracticeStore((state) => state.settings.riverZoom);
   const riverRange = usePracticeStore((state) => state.settings.riverRange);
+  const noteColors = usePracticeStore((state) => state.settings.noteColors);
   const showMeasureLines = usePracticeStore((state) => state.settings.showMeasureLines);
   const showNoteNames = usePracticeStore((state) => state.settings.showNoteNames);
 
@@ -28,6 +29,7 @@ const RiverPlaybackLayer = memo(function RiverPlaybackLayer() {
       handMode={handMode}
       riverZoom={riverZoom}
       riverRange={riverRange}
+      noteColors={noteColors}
       showMeasureLines={showMeasureLines}
       showNoteNames={showNoteNames}
     />

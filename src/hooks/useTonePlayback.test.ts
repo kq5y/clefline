@@ -12,6 +12,7 @@ const DEFAULT_TEST_SETTINGS: PracticeSettings = {
   speed: 1,
   riverZoom: 1,
   riverRange: { minMidi: 21, maxMidi: 108 },
+  noteColors: { left: "#52c7e8", right: "#f7a56e" },
   showMeasureLines: true,
   loopEnabled: false,
   handMode: "both",
