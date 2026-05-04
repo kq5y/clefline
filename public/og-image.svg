@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a0f"/>
+      <stop offset="100%" style="stop-color:#12121a"/>
+    </linearGradient>
+    <linearGradient id="noteLeft" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#83dcf4"/>
+      <stop offset="100%" style="stop-color:#1f8093"/>
+    </linearGradient>
+    <linearGradient id="noteRight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffd0ad"/>
+      <stop offset="100%" style="stop-color:#b85a3a"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" style="stop-color:#8b5cf6;stop-opacity:0.25"/>
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:0"/>
+    </linearGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="50"/>
+    </filter>
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2"/>
+    </filter>
+    <filter id="textGlow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <ellipse cx="600" cy="380" rx="500" ry="200" fill="url(#glow)" filter="url(#blur)"/>
+
+  <g filter="url(#softGlow)">
+    <rect x="55" y="-45" width="24" height="195" rx="5" fill="url(#noteRight)" opacity="0.95"/>
+    <rect x="105" y="85" width="30" height="75" rx="6" fill="url(#noteLeft)" opacity="0.8"/>
+    <rect x="158" y="-15" width="22" height="140" rx="5" fill="url(#noteLeft)" opacity="0.9"/>
+    <rect x="230" y="35" width="26" height="105" rx="5" fill="url(#noteRight)" opacity="0.75"/>
+    <rect x="290" y="-55" width="20" height="170" rx="4" fill="url(#noteLeft)" opacity="0.85"/>
+    <rect x="355" y="60" width="28" height="85" rx="6" fill="url(#noteRight)" opacity="0.7"/>
+  </g>
+
+  <g filter="url(#softGlow)">
+    <rect x="820" y="25" width="26" height="115" rx="5" fill="url(#noteRight)" opacity="0.8"/>
+    <rect x="885" y="-40" width="22" height="165" rx="5" fill="url(#noteLeft)" opacity="0.9"/>
+    <rect x="940" y="70" width="30" height="80" rx="6" fill="url(#noteRight)" opacity="0.75"/>
+    <rect x="1005" y="-20" width="20" height="145" rx="4" fill="url(#noteLeft)" opacity="0.85"/>
+    <rect x="1070" y="45" width="24" height="95" rx="5" fill="url(#noteRight)" opacity="0.9"/>
+    <rect x="1130" y="-10" width="28" height="125" rx="6" fill="url(#noteLeft)" opacity="0.7"/>
+  </g>
+
+  <g filter="url(#softGlow)">
+    <rect x="75" y="475" width="18" height="95" rx="4" fill="url(#noteLeft)" opacity="0.5"/>
+    <rect x="135" y="535" width="22" height="55" rx="5" fill="url(#noteRight)" opacity="0.35"/>
+    <rect x="210" y="495" width="16" height="75" rx="4" fill="url(#noteLeft)" opacity="0.45"/>
+    <rect x="300" y="520" width="20" height="65" rx="4" fill="url(#noteRight)" opacity="0.4"/>
+    <rect x="375" y="550" width="18" height="45" rx="4" fill="url(#noteLeft)" opacity="0.3"/>
+  </g>
+
+  <g filter="url(#softGlow)">
+    <rect x="810" y="505" width="20" height="70" rx="4" fill="url(#noteRight)" opacity="0.45"/>
+    <rect x="895" y="540" width="16" height="50" rx="4" fill="url(#noteLeft)" opacity="0.35"/>
+    <rect x="975" y="485" width="22" height="85" rx="5" fill="url(#noteRight)" opacity="0.5"/>
+    <rect x="1055" y="525" width="18" height="60" rx="4" fill="url(#noteLeft)" opacity="0.4"/>
+    <rect x="1120" y="560" width="20" height="40" rx="4" fill="url(#noteRight)" opacity="0.3"/>
+  </g>
+
+  <text x="600" y="350" font-family="'SF Pro Display', 'Inter', 'Helvetica Neue', sans-serif" font-size="110" font-weight="700" fill="#8b5cf6" text-anchor="middle" letter-spacing="-3" filter="url(#textGlow)" opacity="0.6">Clefline</text>
+  <text x="600" y="350" font-family="'SF Pro Display', 'Inter', 'Helvetica Neue', sans-serif" font-size="110" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="-3">Clefline</text>
+  <text x="600" y="420" font-family="'SF Pro Display', 'Inter', 'Helvetica Neue', sans-serif" font-size="26" font-weight="500" fill="#a78bfa" text-anchor="middle" letter-spacing="8">PIANO PRACTICE</text>
+
+  <g stroke="#a78bfa" stroke-width="2" fill="none" opacity="0.7">
+    <path d="M40,40 L40,80 M40,40 L80,40"/>
+    <path d="M1160,40 L1160,80 M1160,40 L1120,40"/>
+    <path d="M40,590 L40,550 M40,590 L80,590"/>
+    <path d="M1160,590 L1160,550 M1160,590 L1120,590"/>
+  </g>
+</svg>
