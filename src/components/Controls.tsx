@@ -1,6 +1,5 @@
 import {
   BookOpen,
-  FileMusic,
   Info,
   Music2,
   PanelRight,
@@ -10,7 +9,6 @@ import {
   SlidersHorizontal,
   SkipBack,
   SkipForward,
-  Upload,
   Waves,
   X,
 } from "lucide-react";
@@ -94,7 +92,6 @@ export const Controls = memo(function Controls() {
   );
   const settings = usePracticeStore((state) => state.settings);
   const loadFile = usePracticeStore((state) => state.loadFile);
-  const loadSample = usePracticeStore((state) => state.loadSample);
   const togglePlaying = usePracticeStore((state) => state.togglePlaying);
   const preloadAudio = usePracticeStore((state) => state.preloadAudio);
   const setAudioError = usePracticeStore((state) => state.setAudioError);
@@ -199,18 +196,12 @@ export const Controls = memo(function Controls() {
     <>
       <header className="topbar" onPointerUpCapture={blurPointerButton}>
         <div className="brand-block">
-          <h1>{displayTitle}</h1>
-        </div>
-        <div className="file-actions">
-          <button type="button" className="icon-button" onClick={() => void loadSample()}>
-            <FileMusic size={17} />
-            Sample score
-          </button>
-          <label className="icon-button file-picker">
-            <Upload size={17} />
-            Load MusicXML
+          <label className="title-file-picker">
+            <h1>{displayTitle}</h1>
             <input accept=".musicxml,.xml,.mxl" type="file" onChange={onFileChange} />
           </label>
+        </div>
+        <div className="file-actions">
           <button
             type="button"
             aria-label={isPlaying ? "Pause" : "Play"}

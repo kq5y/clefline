@@ -3,6 +3,7 @@ import { usePracticeStore } from "../store/practiceStore";
 import { NoteRiver } from "./NoteRiver";
 import { PlaybackMetadata } from "./PlaybackMetadata";
 import { ProgressTrack } from "./ProgressTrack";
+import { WelcomeScreen } from "./WelcomeScreen";
 
 const loadScoreView = () => import("./ScoreView").then((module) => ({ default: module.ScoreView }));
 const ScoreView = lazy(loadScoreView);
@@ -56,6 +57,14 @@ export const PlaybackSurface = memo(function PlaybackSurface() {
 
     return undefined;
   }, [score, scoreVisible]);
+
+  if (!score) {
+    return (
+      <section className="viewer-panel" aria-label="Music viewer">
+        <WelcomeScreen />
+      </section>
+    );
+  }
 
   return (
     <section className="viewer-panel" aria-label="Music viewer">

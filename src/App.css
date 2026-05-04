@@ -120,6 +120,106 @@
   color: var(--text-muted);
 }
 
+.welcome-screen {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.welcome-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.welcome-content h2 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.welcome-description {
+  margin: 0 0 24px;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+.welcome-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.welcome-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.welcome-button:hover {
+  background: var(--control-hover);
+  border-color: var(--line-strong);
+}
+
+.welcome-button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.welcome-button.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.welcome-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.welcome-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.welcome-hint {
+  margin-top: 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.title-file-picker {
+  cursor: pointer;
+  display: block;
+}
+
+.title-file-picker:hover h1 {
+  color: var(--accent);
+}
+
+.title-file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
 .note-river {
   position: relative;
   width: 100%;
