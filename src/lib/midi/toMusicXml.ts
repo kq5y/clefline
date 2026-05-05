@@ -34,12 +34,13 @@ function escapeXml(str: string): string {
 
 function generateNoteXml(
   note: NoteEvent,
+  durationBeats: number,
   isChord: boolean,
   tieStart: boolean,
   tieStop: boolean
 ): string {
-  const duration = beatsToDivisions(note.durationBeats);
-  const { type, dots } = beatsToNoteType(note.durationBeats);
+  const duration = beatsToDivisions(durationBeats);
+  const { type, dots } = beatsToNoteType(durationBeats);
   const alter = note.alter !== 0 ? `<alter>${note.alter}</alter>` : "";
 
   let tieElements = "";
@@ -82,94 +83,143 @@ function generateRestXml(durationBeats: number, staff: number): string {
 
 function generateBackupXml(durationBeats: number): string {
   const duration = beatsToDivisions(durationBeats);
+  if (duration <= 0) return "";
   return `<backup><duration>${duration}</duration></backup>`;
 }
 
-type MeasureNotes = {
-  staff1: NoteEvent[];
-  staff2: NoteEvent[];
-};
+function generateForwardXml(durationBeats: number, staff: number): string {
+  const duration = beatsToDivisions(durationBeats);
+  if (duration <= 0) return "";
+  return `<forward><duration>${duration}</duration><staff>${staff}</staff><voice>${staff}</voice></forward>`;
+}
 
-function groupNotesByMeasureAndStaff(
+type MeasureNotes = NoteEvent[];
+
+function groupNotesByMeasure(
   notes: NoteEvent[],
   measures: MeasureModel[]
 ): Map<number, MeasureNotes> {
   const grouped = new Map<number, MeasureNotes>();
 
   for (const measure of measures) {
-    grouped.set(measure.index, { staff1: [], staff2: [] });
+    grouped.set(measure.index, []);
   }
 
   for (const note of notes) {
     const measureNotes = grouped.get(note.measureIndex);
     if (measureNotes) {
-      if (note.staff === 1) {
-        measureNotes.staff1.push(note);
-      } else {
-        measureNotes.staff2.push(note);
-      }
+      measureNotes.push(note);
     }
   }
 
   return grouped;
 }
 
-function generateStaffVoice(
-  staffNotes: NoteEvent[],
-  measureStart: number,
-  measureDuration: number,
-  staff: number
-): string {
-  if (staffNotes.length === 0) {
-    return generateRestXml(measureDuration, staff);
+type NoteGroup = {
+  beat: number;
+  staff: number;
+  notes: NoteEvent[];
+  maxDuration: number;
+};
+
+function groupNotesAtSameTime(notes: NoteEvent[]): NoteGroup[] {
+  if (notes.length === 0) return [];
+
+  const sorted = notes.toSorted((a, b) => {
+    if (Math.abs(a.startBeat - b.startBeat) > 0.001) return a.startBeat - b.startBeat;
+    if (a.staff !== b.staff) return a.staff - b.staff;
+    return b.midi - a.midi;
+  });
+
+  const groups: NoteGroup[] = [];
+  let currentGroup: NoteGroup | null = null;
+
+  for (const note of sorted) {
+    if (
+      !currentGroup ||
+      Math.abs(note.startBeat - currentGroup.beat) > 0.001 ||
+      note.staff !== currentGroup.staff
+    ) {
+      if (currentGroup) groups.push(currentGroup);
+      currentGroup = {
+        beat: note.startBeat,
+        staff: note.staff,
+        notes: [note],
+        maxDuration: note.durationBeats,
+      };
+    } else {
+      currentGroup.notes.push(note);
+      currentGroup.maxDuration = Math.max(currentGroup.maxDuration, note.durationBeats);
+    }
   }
 
-  const sorted = staffNotes.toSorted((a, b) => a.startBeat - b.startBeat || b.midi - a.midi);
+  if (currentGroup) groups.push(currentGroup);
+
+  return groups;
+}
+
+function generateMeasureContent(
+  measureNotes: NoteEvent[],
+  measureStart: number,
+  measureDuration: number
+): string {
+  const measureEnd = measureStart + measureDuration;
+  const groups = groupNotesAtSameTime(measureNotes);
+  const elements: string[] = [];
+
+  if (groups.length === 0) {
+    elements.push(generateRestXml(measureDuration, 1));
+    elements.push(generateBackupXml(measureDuration));
+    elements.push(generateRestXml(measureDuration, 2));
+    return elements.join("\n");
+  }
+
+  const staff1Groups = groups.filter((g) => g.staff === 1);
+  const staff2Groups = groups.filter((g) => g.staff === 2);
+
+  elements.push(generateVoiceContent(staff1Groups, measureStart, measureEnd, 1));
+
+  elements.push(generateBackupXml(measureDuration));
+
+  elements.push(generateVoiceContent(staff2Groups, measureStart, measureEnd, 2));
+
+  return elements.join("\n");
+}
+
+function generateVoiceContent(
+  groups: NoteGroup[],
+  measureStart: number,
+  measureEnd: number,
+  staff: number
+): string {
   const elements: string[] = [];
   let currentBeat = measureStart;
-  const measureEnd = measureStart + measureDuration;
 
-  let i = 0;
-  while (i < sorted.length) {
-    const note = sorted[i];
-    const noteStart = note.startBeat;
-
-    if (noteStart > currentBeat + 0.001) {
-      const gap = Math.min(noteStart - currentBeat, measureEnd - currentBeat);
-      if (gap >= 0.0625) {
-        elements.push(generateRestXml(gap, staff));
+  for (const group of groups) {
+    if (group.beat > currentBeat + 0.001) {
+      const gap = Math.min(group.beat - currentBeat, measureEnd - currentBeat);
+      if (gap >= 0.03) {
+        elements.push(generateForwardXml(gap, staff));
+        currentBeat += gap;
       }
-      currentBeat = noteStart;
     }
 
-    const chordNotes: NoteEvent[] = [note];
-    let j = i + 1;
-    while (j < sorted.length && Math.abs(sorted[j].startBeat - noteStart) < 0.001) {
-      chordNotes.push(sorted[j]);
-      j += 1;
+    for (let i = 0; i < group.notes.length; i++) {
+      const note = group.notes[i];
+      const isChord = i > 0;
+      const noteEnd = Math.min(note.startBeat + note.durationBeats, measureEnd);
+      const effectiveDuration = Math.max(0.03, noteEnd - note.startBeat);
+      elements.push(generateNoteXml(note, effectiveDuration, isChord, note.tieStart, note.tieStop));
     }
 
-    for (let k = 0; k < chordNotes.length; k += 1) {
-      const n = chordNotes[k];
-      const isChord = k > 0;
-      const noteEndInMeasure = Math.min(n.startBeat + n.durationBeats, measureEnd);
-      const effectiveDuration = noteEndInMeasure - n.startBeat;
-      const adjustedNote = { ...n, durationBeats: effectiveDuration };
-      elements.push(generateNoteXml(adjustedNote, isChord, n.tieStart, n.tieStop));
-    }
-
-    const maxEnd = Math.min(
-      Math.max(...chordNotes.map((n) => n.startBeat + n.durationBeats)),
-      measureEnd
-    );
-    currentBeat = maxEnd;
-    i = j;
+    const groupEnd = Math.min(group.beat + group.maxDuration, measureEnd);
+    currentBeat = groupEnd;
   }
 
   if (currentBeat < measureEnd - 0.001) {
     const remaining = measureEnd - currentBeat;
-    if (remaining >= 0.0625) {
-      elements.push(generateRestXml(remaining, staff));
+    if (remaining >= 0.03) {
+      elements.push(generateForwardXml(remaining, staff));
     }
   }
 
@@ -241,27 +291,15 @@ function generateMeasureXml(
     }
   }
 
-  const staff1Voice = generateStaffVoice(
-    measureNotes.staff1,
+  const content = generateMeasureContent(
+    measureNotes,
     measure.startBeat,
-    measure.durationBeats,
-    1
-  );
-
-  const backup = generateBackupXml(measure.durationBeats);
-
-  const staff2Voice = generateStaffVoice(
-    measureNotes.staff2,
-    measure.startBeat,
-    measure.durationBeats,
-    2
+    measure.durationBeats
   );
 
   const xml = `<measure number="${measure.number}">
 ${attributes}${directionXml}
-${staff1Voice}
-${backup}
-${staff2Voice}
+${content}
 </measure>`;
 
   return { xml, tempo: newTempo };
@@ -269,7 +307,7 @@ ${staff2Voice}
 
 export function scoreModelToMusicXml(score: ScoreModel): string {
   const title = escapeXml(score.metadata.title || "Untitled");
-  const groupedNotes = groupNotesByMeasureAndStaff(score.notes, score.measures);
+  const groupedNotes = groupNotesByMeasure(score.notes, score.measures);
 
   const measureXmls: string[] = [];
   let prevTimeSig: TimeSignature | undefined;
@@ -277,7 +315,7 @@ export function scoreModelToMusicXml(score: ScoreModel): string {
 
   for (let i = 0; i < score.measures.length; i += 1) {
     const measure = score.measures[i];
-    const notes = groupedNotes.get(measure.index) || { staff1: [], staff2: [] };
+    const notes = groupedNotes.get(measure.index) || [];
 
     const { xml, tempo } = generateMeasureXml(
       measure,

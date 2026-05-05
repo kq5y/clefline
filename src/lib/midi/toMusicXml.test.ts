@@ -138,14 +138,14 @@ describe("scoreModelToMusicXml", () => {
     expect(xml.match(/<chord\/>/g)?.length).toBe(2);
   });
 
-  it("generates rests for gaps", () => {
+  it("generates forward for gaps", () => {
     const score = createScore({
       measures: [createMeasure({ durationBeats: 4 })],
       notes: [createNote({ startBeat: 2, durationBeats: 1 })],
     });
     const xml = scoreModelToMusicXml(score);
 
-    expect(xml).toContain("<rest/>");
+    expect(xml).toContain("<forward>");
   });
 
   it("generates ties", () => {
