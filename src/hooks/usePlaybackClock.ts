@@ -8,11 +8,13 @@ import {
 
 const HIDDEN_COMMIT_MS = 300;
 const VISIBLE_COMMIT_MS = 66;
+const HIDDEN_TICK_INTERVAL_MS = 200;
 
 export function usePlaybackClock(): void {
   const lastFrame = useRef<number | undefined>(undefined);
   const lastCommitFrame = useRef(0);
   const positionRef = useRef(0);
+  const wasHiddenRef = useRef(false);
   const isPlaying = usePracticeStore((state) => state.isPlaying);
   const score = usePracticeStore((state) => state.score);
   const setPosition = usePracticeStore((state) => state.setPosition);
@@ -23,6 +25,7 @@ export function usePlaybackClock(): void {
       lastFrame.current = undefined;
       lastCommitFrame.current = 0;
       positionRef.current = usePracticeStore.getState().positionBeats;
+      wasHiddenRef.current = false;
       return undefined;
     }
 
@@ -71,24 +74,62 @@ export function usePlaybackClock(): void {
     };
 
     let frameId: number | undefined;
-    const frame = () => {
-      tick();
+    let hiddenIntervalId: number | undefined;
+
+    const startAnimationLoop = () => {
+      if (frameId !== undefined) return;
+      const frame = () => {
+        tick();
+        frameId = window.requestAnimationFrame(frame);
+      };
       frameId = window.requestAnimationFrame(frame);
     };
-    frameId = window.requestAnimationFrame(frame);
-    const hiddenIntervalId = window.setInterval(() => {
-      if (document.hidden) {
-        tick();
-      }
-    }, HIDDEN_COMMIT_MS);
-    window.addEventListener("visibilitychange", tick);
 
-    return () => {
+    const stopAnimationLoop = () => {
       if (frameId !== undefined) {
         window.cancelAnimationFrame(frameId);
+        frameId = undefined;
       }
-      window.clearInterval(hiddenIntervalId);
-      window.removeEventListener("visibilitychange", tick);
+    };
+
+    const startHiddenInterval = () => {
+      if (hiddenIntervalId !== undefined) return;
+      hiddenIntervalId = window.setInterval(tick, HIDDEN_TICK_INTERVAL_MS);
+    };
+
+    const stopHiddenInterval = () => {
+      if (hiddenIntervalId !== undefined) {
+        window.clearInterval(hiddenIntervalId);
+        hiddenIntervalId = undefined;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      tick();
+      if (document.hidden) {
+        stopAnimationLoop();
+        startHiddenInterval();
+        wasHiddenRef.current = true;
+      } else {
+        stopHiddenInterval();
+        startAnimationLoop();
+        wasHiddenRef.current = false;
+      }
+    };
+
+    if (document.hidden) {
+      startHiddenInterval();
+      wasHiddenRef.current = true;
+    } else {
+      startAnimationLoop();
+    }
+
+    window.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      stopAnimationLoop();
+      stopHiddenInterval();
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [isPlaying, score, setPlaying, setPosition]);
 }

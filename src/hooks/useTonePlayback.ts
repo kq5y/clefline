@@ -22,6 +22,7 @@ const LOOK_AHEAD_SECONDS = 0.36;
 const HIDDEN_LOOK_AHEAD_SECONDS = 2.2;
 const LATE_EVENT_CATCHUP_SECONDS = 0.6;
 const MIN_SCHEDULE_DELAY_SECONDS = 0.004;
+const MAX_SCHEDULED_IDS = 500;
 const metronomeClickCache = new WeakMap<ScoreModel, ReturnType<typeof buildMetronomeClicks>>();
 
 function firstEventIndexAtOrAfter(events: { absoluteBeat: number }[], beat: number): number {
@@ -73,11 +74,12 @@ function secondsBetweenPlaybackBeats(
     return span / beatRateForTempo(tempo, speed);
   }
 
-  // For longer spans, use 0.5 beat steps (was 0.25)
+  // For longer spans, use adaptive step size based on span length
+  const stepSize = span > 4 ? 1 : 0.5;
   let seconds = 0;
   let cursor = fromBeat;
   while (cursor < toBeat - 0.0001) {
-    const next = Math.min(toBeat, cursor + 0.5);
+    const next = Math.min(toBeat, cursor + stepSize);
     const sourceBeat = sourceBeatAt(events, cursor);
     const tempo = tempoAtSourceBeat(score, sourceBeat);
     seconds += (next - cursor) / beatRateForTempo(tempo, speed);
@@ -360,6 +362,9 @@ export function useTonePlayback(): void {
         }
       } finally {
         schedulingRef.current = false;
+        if (scheduledRef.current.size > MAX_SCHEDULED_IDS) {
+          scheduledRef.current.clear();
+        }
       }
     };
 
