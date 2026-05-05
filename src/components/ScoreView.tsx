@@ -627,18 +627,26 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
     setLoadingMessage("Initializing...");
 
     const configureOsmd = (osmd: OSMDInstance) => {
-      osmd.EngravingRules.RenderSingleHorizontalStaffline = true;
-      osmd.EngravingRules.RenderGlissandi = true;
-      osmd.EngravingRules.RehearsalMarkYOffsetDefault = 20;
-      osmd.EngravingRules.RehearsalMarkYOffsetAddedForRehearsalMarks = 0;
-      osmd.EngravingRules.RehearsalMarkFontSize = 11;
+      const rules = osmd.EngravingRules;
+      rules.RenderSingleHorizontalStaffline = true;
+      rules.RenderGlissandi = true;
+      rules.RehearsalMarkYOffsetDefault = 20;
+      rules.RehearsalMarkYOffsetAddedForRehearsalMarks = 0;
+      rules.RehearsalMarkFontSize = 11;
       // Prevent narrow measures with whole notes
-      (osmd.EngravingRules as { MinimumMeasureWidth?: number }).MinimumMeasureWidth = 10;
+      (rules as { MinimumMeasureWidth?: number }).MinimumMeasureWidth = 10;
       // Add margin before bar lines to prevent note overlap
-      osmd.EngravingRules.MeasureRightMargin = 4.0;
+      rules.MeasureRightMargin = 4.0;
       // Increase spacing between notes
-      osmd.EngravingRules.VoiceSpacingAddendVexflow = 6.0;
+      rules.VoiceSpacingAddendVexflow = 6.0;
       osmd.Zoom = 0.92;
+
+      // Performance optimizations for piano practice
+      rules.RenderLyrics = false;
+      rules.RenderFingerings = false;
+      rules.RenderPedals = false;
+      rules.RenderChordSymbols = false;
+      rules.ColoringEnabled = false;
     };
 
     const osmdOptions = {
