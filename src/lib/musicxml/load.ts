@@ -9,8 +9,7 @@ function parseXml(xml: string): Document {
   return new DOMParser().parseFromString(xml, "application/xml");
 }
 
-async function loadCompressedMusicXml(file: File): Promise<LoadedMusicXml> {
-  const zip = await JSZip.loadAsync(file);
+async function extractXmlFromZip(zip: JSZip): Promise<string> {
   const container = zip.file("META-INF/container.xml");
   let rootPath: string | undefined;
 
@@ -34,55 +33,16 @@ async function loadCompressedMusicXml(file: File): Promise<LoadedMusicXml> {
     throw new Error(`Compressed MusicXML references missing file: ${rootPath}`);
   }
 
-  return {
-    xml: await xmlFile.async("text"),
-    sourceName: file.name,
-  };
+  return xmlFile.async("text");
 }
 
 export async function readMusicXmlFile(file: File): Promise<LoadedMusicXml> {
   if (file.name.toLowerCase().endsWith(".mxl")) {
-    return loadCompressedMusicXml(file);
+    const zip = await JSZip.loadAsync(file);
+    return { xml: await extractXmlFromZip(zip), sourceName: file.name };
   }
 
-  return {
-    xml: await file.text(),
-    sourceName: file.name,
-  };
-}
-
-async function loadCompressedMusicXmlFromBuffer(
-  buffer: ArrayBuffer,
-  sourceName: string,
-): Promise<LoadedMusicXml> {
-  const zip = await JSZip.loadAsync(buffer);
-  const container = zip.file("META-INF/container.xml");
-  let rootPath: string | undefined;
-
-  if (container) {
-    const containerXml = await container.async("text");
-    const document = parseXml(containerXml);
-    rootPath =
-      document.querySelector("rootfile[full-path]")?.getAttribute("full-path") ?? undefined;
-  }
-
-  rootPath ??= Object.keys(zip.files).find(
-    (path) => path.toLowerCase().endsWith(".xml") && !path.startsWith("META-INF/"),
-  );
-
-  if (!rootPath) {
-    throw new Error("Compressed MusicXML does not contain a score XML file.");
-  }
-
-  const xmlFile = zip.file(rootPath);
-  if (!xmlFile) {
-    throw new Error(`Compressed MusicXML references missing file: ${rootPath}`);
-  }
-
-  return {
-    xml: await xmlFile.async("text"),
-    sourceName,
-  };
+  return { xml: await file.text(), sourceName: file.name };
 }
 
 export async function fetchMusicXml(url: string): Promise<LoadedMusicXml> {
@@ -95,11 +55,9 @@ export async function fetchMusicXml(url: string): Promise<LoadedMusicXml> {
 
   if (sourceName.toLowerCase().endsWith(".mxl")) {
     const buffer = await response.arrayBuffer();
-    return loadCompressedMusicXmlFromBuffer(buffer, sourceName);
+    const zip = await JSZip.loadAsync(buffer);
+    return { xml: await extractXmlFromZip(zip), sourceName };
   }
 
-  return {
-    xml: await response.text(),
-    sourceName,
-  };
+  return { xml: await response.text(), sourceName };
 }
