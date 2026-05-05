@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { preloadPianoEngine } from "../lib/audio/pianoEngine";
+import { readMidiFile, parseMidi, midiToScoreModel } from "../lib/midi";
 import { preloadOsmd } from "../lib/osmd";
 import {
   buildPlaybackEvents,
@@ -222,8 +223,13 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 function scoreLoadErrorMessage(sourceName: string, error: unknown): string {
-  const message = errorMessage(error, "Failed to load MusicXML.");
+  const message = errorMessage(error, "Failed to load file.");
   const lowerName = sourceName.toLowerCase();
+
+  if (lowerName.endsWith(".mid") || lowerName.endsWith(".midi")) {
+    return `MIDI load failed: ${message}`;
+  }
+
   if (lowerName.endsWith(".mxl")) {
     return `MXL load failed: ${message}`;
   }
@@ -660,6 +666,40 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       isPlaying: false,
       positionBeats: minimumPositionBeats(get().score),
     });
+
+    const ext = file.name.toLowerCase().split(".").pop();
+    if (ext === "mid" || ext === "midi") {
+      try {
+        const loaded = await readMidiFile(file);
+        const parsedMidi = parseMidi(loaded.arrayBuffer);
+        const score = midiToScoreModel(parsedMidi, loaded.sourceName);
+        const settings = {
+          ...get().settings,
+          viewMode: "river" as ViewMode,
+          loopEnabled: false,
+          loopStartMeasure: score.measures[0]?.number,
+          loopEndMeasure: score.measures[Math.min(3, score.measures.length - 1)]?.number,
+        };
+        preloadOsmd();
+        set({
+          score,
+          loadedName: loaded.sourceName,
+          settings,
+          playbackEvents: eventsFor(score, settings.handMode),
+          isLoading: false,
+          loadError: undefined,
+          isPlaying: false,
+          positionBeats: minimumPositionBeats(score),
+        });
+      } catch (error) {
+        set({
+          isLoading: false,
+          loadError: scoreLoadErrorMessage(file.name, error),
+        });
+      }
+      return;
+    }
+
     try {
       const loaded = await readMusicXmlFile(file);
       get().loadXml(loaded.xml, loaded.sourceName);

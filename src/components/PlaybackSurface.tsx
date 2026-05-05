@@ -81,7 +81,7 @@ export const PlaybackSurface = memo(function PlaybackSurface() {
       <div className={scoreVisible ? "viewer-layer inactive" : "viewer-layer active"}>
         {scoreVisible ? null : <RiverPlaybackLayer />}
       </div>
-      {scoreMounted ? (
+      {scoreMounted && score.rawXml ? (
         <div className={scoreVisible ? "viewer-layer active" : "viewer-layer inactive"}>
           <Suspense fallback={<div className="empty-state">Loading notation...</div>}>
             <ScoreView active={scoreVisible} score={score} />

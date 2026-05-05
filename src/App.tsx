@@ -108,7 +108,7 @@ function App() {
       <Controls />
       <PlaybackSurface />
       <KeyboardShell />
-      {dragActive ? <div className="drop-overlay">Drop MusicXML here</div> : null}
+      {dragActive ? <div className="drop-overlay">Drop MusicXML or MIDI here</div> : null}
     </main>
   );
 }

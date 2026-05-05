@@ -45,7 +45,7 @@ function titleFromSourceName(sourceName: string | undefined): string | undefined
   const stem = sourceName
     ?.split("/")
     .pop()
-    ?.replace(/\.(musicxml|mxl|xml)$/i, "")
+    ?.replace(/\.(musicxml|mxl|xml|mid|midi)$/i, "")
     .trim();
   if (!stem) {
     return undefined;
@@ -220,7 +220,7 @@ export const Controls = memo(function Controls() {
         <div className="brand-block">
           <label className="title-file-picker">
             <h1>{displayTitle}</h1>
-            <input accept=".musicxml,.xml,.mxl" type="file" onChange={onFileChange} />
+            <input accept=".musicxml,.xml,.mxl,.mid,.midi" type="file" onChange={onFileChange} />
           </label>
         </div>
         <div className="file-actions">
@@ -291,6 +291,8 @@ export const Controls = memo(function Controls() {
               type="button"
               className={settings.viewMode === "score" ? "selected" : ""}
               onClick={() => updateSettings({ viewMode: "score" })}
+              disabled={score && !score.rawXml}
+              title={score && !score.rawXml ? "Score view unavailable for MIDI files" : undefined}
             >
               <BookOpen size={15} />
               Score

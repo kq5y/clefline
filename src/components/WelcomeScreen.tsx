@@ -63,7 +63,7 @@ export const WelcomeScreen = memo(function WelcomeScreen() {
             <Upload size={18} />
             <span>Open File</span>
             <input
-              accept=".musicxml,.xml,.mxl"
+              accept=".musicxml,.xml,.mxl,.mid,.midi"
               type="file"
               onChange={onFileChange}
               disabled={isLoading}
