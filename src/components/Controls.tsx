@@ -308,13 +308,13 @@ export const Controls = memo(function Controls() {
           </button>
           <button
             type="button"
-            className="icon-button"
+            className="round-button"
+            aria-label="Score info"
             aria-controls="options-panel"
             aria-expanded={openPanel === "info"}
             onClick={() => setOpenPanel(openPanel === "info" ? undefined : "info")}
           >
             <Info size={17} />
-            Info
           </button>
           <button
             type="button"
