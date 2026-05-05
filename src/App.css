@@ -131,6 +131,9 @@
   background: linear-gradient(90deg, var(--accent), #ffd166);
   transform: scaleX(0);
   transform-origin: left center;
+}
+
+.progress-track div.animating {
   will-change: transform;
 }
 
@@ -319,6 +322,9 @@
 .note-river canvas {
   position: absolute;
   left: 0;
+}
+
+.note-river canvas.animating {
   will-change: transform;
 }
 
@@ -333,7 +339,7 @@
   pointer-events: none;
 }
 
-.river-motion-layer {
+.river-motion-layer.animating {
   will-change: transform;
 }
 
@@ -721,8 +727,11 @@ input:focus-visible {
   width: 100%;
   min-width: 100%;
   min-height: 100%;
-  will-change: transform;
   contain: layout style;
+}
+
+.score-track.animating {
+  will-change: transform;
 }
 
 .score-canvas {

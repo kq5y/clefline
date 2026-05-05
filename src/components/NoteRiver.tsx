@@ -292,6 +292,29 @@ function drawMeasureLabel(
 
 const OCTAVE_C_MIDIS = [24, 36, 48, 60, 72, 84, 96];
 
+const noteColorsCache = new Map<string, Record<Hand, { black: string; white: string }>>();
+const glissandoColorsCache = new Map<string, Record<Hand, string>>();
+
+function getCachedNoteColors(noteColors: NoteColors): Record<Hand, { black: string; white: string }> {
+  const key = `${noteColors.left}:${noteColors.right}`;
+  let cached = noteColorsCache.get(key);
+  if (!cached) {
+    cached = buildNoteColors(noteColors);
+    noteColorsCache.set(key, cached);
+  }
+  return cached;
+}
+
+function getCachedGlissandoColors(noteColors: NoteColors): Record<Hand, string> {
+  const key = `${noteColors.left}:${noteColors.right}`;
+  let cached = glissandoColorsCache.get(key);
+  if (!cached) {
+    cached = buildGlissandoColors(noteColors);
+    glissandoColorsCache.set(key, cached);
+  }
+  return cached;
+}
+
 function drawRiverLayer(
   canvas: HTMLCanvasElement,
   visualScore: VisualScore,
@@ -302,9 +325,9 @@ function drawRiverLayer(
   noteColors: NoteColors,
   showMeasureLines: boolean,
 ): void {
-  const NOTE_COLORS = buildNoteColors(noteColors);
-  const GLISSANDO_COLORS = buildGlissandoColors(noteColors);
-  const context = canvas.getContext("2d");
+  const NOTE_COLORS = getCachedNoteColors(noteColors);
+  const GLISSANDO_COLORS = getCachedGlissandoColors(noteColors);
+  const context = canvas.getContext("2d", { alpha: true });
   if (!context) {
     return;
   }

@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo, useRef } from "react";
 import { playMidiOnce } from "../lib/audio/pianoEngine";
 import {
   BLACK_KEY_LAYOUTS,
@@ -15,19 +15,25 @@ type PianoKeyboardProps = {
   volume: number;
 };
 
-function activeClass(hand: Hand | undefined, black: boolean): string {
-  const base = black ? "black-key" : "white-key";
-  if (hand === "right") {
-    return `${base} active-right`;
-  }
-  if (hand === "left") {
-    return `${base} active-left`;
-  }
-  if (hand === "unknown") {
-    return `${base} active-unknown`;
-  }
+const CLASS_CACHE: Record<string, string> = {};
 
-  return base;
+function activeClass(hand: Hand | undefined, black: boolean): string {
+  const key = `${hand ?? "none"}-${black}`;
+  if (CLASS_CACHE[key]) return CLASS_CACHE[key];
+
+  const base = black ? "black-key" : "white-key";
+  let result: string;
+  if (hand === "right") {
+    result = `${base} active-right`;
+  } else if (hand === "left") {
+    result = `${base} active-left`;
+  } else if (hand === "unknown") {
+    result = `${base} active-unknown`;
+  } else {
+    result = base;
+  }
+  CLASS_CACHE[key] = result;
+  return result;
 }
 
 function sameActiveNotes(
@@ -49,16 +55,15 @@ function sameActiveNotes(
 
 export const PianoKeyboard = memo(
   function PianoKeyboard({ activeNotes, riverRange, showNoteNames, volume }: PianoKeyboardProps) {
+    const volumeRef = useRef(volume);
+    volumeRef.current = volume;
     const active = useMemo(
       () => new Map(activeNotes.map((note) => [note.midi, note.hand])),
       [activeNotes],
     );
-    const playKey = useCallback(
-      (midi: number) => {
-        void playMidiOnce(midi, volume);
-      },
-      [volume],
-    );
+    const playKey = useCallback((midi: number) => {
+      void playMidiOnce(midi, volumeRef.current);
+    }, []);
 
     const whiteKeys = useMemo(
       () =>
