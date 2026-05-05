@@ -7,6 +7,25 @@ export default defineConfig({
   optimizeDeps: {
     include: ["opensheetmusicdisplay"],
   },
+  build: {
+    target: "esnext",
+    minify: "esbuild",
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/tone")) {
+            return "tone";
+          }
+          if (id.includes("opensheetmusicdisplay")) {
+            return "osmd";
+          }
+          if (id.includes("node_modules/react") || id.includes("node_modules/zustand")) {
+            return "vendor";
+          }
+        },
+      },
+    },
+  },
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
