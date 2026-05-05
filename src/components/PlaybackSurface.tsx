@@ -1,4 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
+import { preloadOsmd } from "../lib/osmd";
 import { usePracticeStore } from "../store/practiceStore";
 import { NoteRiver } from "./NoteRiver";
 import { PlaybackMetadata } from "./PlaybackMetadata";
@@ -10,6 +11,7 @@ const ScoreView = lazy(loadScoreView);
 
 function preloadScoreView(): void {
   void loadScoreView();
+  preloadOsmd();
 }
 
 const RiverPlaybackLayer = memo(function RiverPlaybackLayer() {

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { preloadPianoEngine } from "../lib/audio/pianoEngine";
+import { preloadOsmd } from "../lib/osmd";
 import {
   buildPlaybackEvents,
   buildPlaybackSections,
@@ -631,6 +632,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
 
   loadXml(xml, sourceName) {
     const score = parseMusicXml(xml);
+    preloadOsmd();
     const firstMeasure = score.measures[0]?.number;
     const fourthMeasure = score.measures[Math.min(3, score.measures.length - 1)]?.number;
     const settings = {
@@ -763,11 +765,15 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
   },
 
   updateSettings(patch) {
-    const nextSettings = { ...get().settings, ...patch };
-    const score = get().score;
-    const playbackEvents = score ? eventsFor(score, nextSettings.handMode) : [];
+    const state = get();
+    const nextSettings = { ...state.settings, ...patch };
+    const score = state.score;
+    const handModeChanged = patch.handMode !== undefined && patch.handMode !== state.settings.handMode;
+    const playbackEvents = handModeChanged && score
+      ? eventsFor(score, nextSettings.handMode)
+      : state.playbackEvents;
     const bounds = loopBounds(score, nextSettings);
-    const currentPosition = get().positionBeats;
+    const currentPosition = state.positionBeats;
     const positionBeats =
       bounds && (currentPosition < bounds.startBeat || currentPosition > bounds.endBeat)
         ? bounds.startBeat
