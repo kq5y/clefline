@@ -291,8 +291,6 @@ export const Controls = memo(function Controls() {
               type="button"
               className={settings.viewMode === "score" ? "selected" : ""}
               onClick={() => updateSettings({ viewMode: "score" })}
-              disabled={score && !score.rawXml}
-              title={score && !score.rawXml ? "Score view unavailable for MIDI files" : undefined}
             >
               <BookOpen size={15} />
               Score

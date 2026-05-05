@@ -675,7 +675,6 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
         const score = midiToScoreModel(parsedMidi, loaded.sourceName);
         const settings = {
           ...get().settings,
-          viewMode: "river" as ViewMode,
           loopEnabled: false,
           loopStartMeasure: score.measures[0]?.number,
           loopEndMeasure: score.measures[Math.min(3, score.measures.length - 1)]?.number,

@@ -77,7 +77,8 @@ describe("midiToScoreModel", () => {
     const score = midiToScoreModel(parsed, "test.mid");
 
     expect(score.metadata.title).toBe("test");
-    expect(score.rawXml).toBe("");
+    expect(score.rawXml).toContain("<?xml version");
+    expect(score.rawXml).toContain("score-partwise");
   });
 
   it("generates measures from time signature", () => {

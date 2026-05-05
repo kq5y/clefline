@@ -10,6 +10,7 @@ import type {
   ScoreWarning,
 } from "../musicxml/types";
 import { midiToPitchName } from "../musicxml/pitch";
+import { scoreModelToMusicXml } from "./toMusicXml";
 
 const SHARP_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const DEFAULT_HAND_SPLIT_MIDI = 60;
@@ -128,7 +129,7 @@ export function midiToScoreModel(
       ? measures[measures.length - 1].startBeat + measures[measures.length - 1].durationBeats
       : 0;
 
-  return {
+  const score: ScoreModel = {
     metadata: {
       title: fileName.replace(/\.(mid|midi)$/i, ""),
       partName: parsedMidi.name || undefined,
@@ -141,6 +142,10 @@ export function midiToScoreModel(
     totalBeats,
     rawXml: "",
   };
+
+  score.rawXml = scoreModelToMusicXml(score);
+
+  return score;
 }
 
 function buildMeasures(parsedMidi: ParsedMidiFile): MeasureModel[] {
