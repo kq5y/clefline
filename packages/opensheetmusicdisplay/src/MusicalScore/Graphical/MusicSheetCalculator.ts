@@ -316,25 +316,22 @@ export abstract class MusicSheetCalculator {
         this.clearRecreatedObjects();
         this.createGraphicalTies();
 
-        onProgress?.("Calculating labels", 0, 100);
+        onProgress?.("Preparing", 0, 100);
         await yieldToMain();
 
         this.calculateSheetLabelBoundingBoxes();
         this.calculateXLayout(this.graphicalMusicSheet, this.maxInstrNameLabelLength());
 
-        onProgress?.("Building systems", 10, 100);
         await yieldToMain();
 
         this.graphicalMusicSheet.MusicPages.length = 0;
-        await this.calculateMusicSystemsAsync((current, total) => {
-            const percent = 10 + Math.round((current / total) * 60);
-            onProgress?.("Building systems", percent, 100);
-        });
+        await this.calculateMusicSystemsAsync(onProgress);
 
-        onProgress?.("Finalizing layout", 70, 100);
+        onProgress?.("Finalizing", 95, 100);
         await yieldToMain();
 
-        GraphicalMusicSheet.transformRelativeToAbsolutePosition(this.graphicalMusicSheet);
+        await GraphicalMusicSheet.transformRelativeToAbsolutePositionAsync(this.graphicalMusicSheet);
+
         onProgress?.("Complete", 100, 100);
     }
 
@@ -1096,7 +1093,7 @@ export abstract class MusicSheetCalculator {
      * Async version of calculateMusicSystems that yields to main thread periodically.
      */
     protected async calculateMusicSystemsAsync(
-        onProgress?: (current: number, total: number) => void
+        onProgress?: (phase: string, current: number, total: number) => void
     ): Promise<void> {
         const { yieldToMain } = await import("../../Util/AsyncUtil");
 
@@ -1148,11 +1145,14 @@ export abstract class MusicSheetCalculator {
             return;
         }
 
-        // build the MusicSystems (and StaffLines) - ASYNC
         const musicSystemBuilder: MusicSystemBuilder = new MusicSystemBuilder();
         musicSystemBuilder.initialize(this.graphicalMusicSheet, visibleMeasureList, numberOfStaffLines);
-        this.musicSystems = await musicSystemBuilder.buildMusicSystemsAsync(onProgress);
+        this.musicSystems = await musicSystemBuilder.buildMusicSystemsAsync((current, total) => {
+            const percent = Math.round((current / total) * 40);
+            onProgress?.("Building systems", percent, 100);
+        });
 
+        onProgress?.("Formatting", 45, 100);
         await yieldToMain();
         this.formatMeasures();
 
@@ -1164,13 +1164,13 @@ export abstract class MusicSheetCalculator {
             }
         }
 
+        onProgress?.("Calculating layout", 55, 100);
         await yieldToMain();
         this.calculateSkyBottomLines();
         this.calculateTupletNumbers();
 
         if (this.rules.RenderMeasureNumbers) {
-            for (let idx: number = 0, len: number = this.musicSystems.length; idx < len; ++idx) {
-                const musicSystem: MusicSystem = this.musicSystems[idx];
+            for (const musicSystem of this.musicSystems) {
                 this.calculateMeasureNumberPlacement(musicSystem);
             }
         }
@@ -1182,11 +1182,11 @@ export abstract class MusicSheetCalculator {
         }
         this.calculateGlissandi();
 
+        onProgress?.("Calculating layout", 70, 100);
         await yieldToMain();
 
         if (this.rules.RenderMeasureNumbers) {
-            for (let idx: number = 0, len: number = this.musicSystems.length; idx < len; ++idx) {
-                const musicSystem: MusicSystem = this.musicSystems[idx];
+            for (const musicSystem of this.musicSystems) {
                 this.calculateMeasureNumberSkyline(musicSystem);
             }
         }
@@ -1211,12 +1211,11 @@ export abstract class MusicSheetCalculator {
         this.calculateRehearsalMarks();
         this.calculateLyricsPosition();
 
+        onProgress?.("Calculating layout", 80, 100);
         await yieldToMain();
 
-        for (let idx2: number = 0, len2: number = this.musicSystems.length; idx2 < len2; ++idx2) {
-            const musicSystem: MusicSystem = this.musicSystems[idx2];
-            for (let idx3: number = 0, len3: number = musicSystem.StaffLines.length; idx3 < len3; ++idx3) {
-                const staffLine: StaffLine = musicSystem.StaffLines[idx3];
+        for (const musicSystem of this.musicSystems) {
+            for (const staffLine of musicSystem.StaffLines) {
                 this.updateStaffLineBorders(staffLine);
             }
         }
@@ -1225,13 +1224,14 @@ export abstract class MusicSheetCalculator {
         this.calculateComments();
         this.calculateMarkedAreas();
 
+        onProgress?.("Calculating layout", 90, 100);
         await yieldToMain();
 
-        for (let idx: number = 0, len: number = this.graphicalMusicSheet.MusicPages.length; idx < len; ++idx) {
-            const graphicalMusicPage: GraphicalMusicPage = this.graphicalMusicSheet.MusicPages[idx];
-            for (let idx2: number = 0, len2: number = graphicalMusicPage.MusicSystems.length; idx2 < len2; ++idx2) {
-                const isFirstSystem: boolean = idx === 0 && idx2 === 0;
-                const musicSystem: MusicSystem = graphicalMusicPage.MusicSystems[idx2];
+        for (let i = 0; i < this.graphicalMusicSheet.MusicPages.length; i++) {
+            const graphicalMusicPage: GraphicalMusicPage = this.graphicalMusicSheet.MusicPages[i];
+            for (let j = 0; j < graphicalMusicPage.MusicSystems.length; j++) {
+                const isFirstSystem: boolean = i === 0 && j === 0;
+                const musicSystem: MusicSystem = graphicalMusicPage.MusicSystems[j];
                 musicSystem.setMusicSystemLabelsYPosition();
                 if (!this.leadSheet) {
                     musicSystem.setYPositionsToVerticalLineObjectsAndCreateLines(this.rules);
@@ -1245,8 +1245,7 @@ export abstract class MusicSheetCalculator {
                 musicSystem.calculateBorders(this.rules);
             }
             const distance: number = graphicalMusicPage.MusicSystems[0].PositionAndShape.BorderTop;
-            for (let idx2: number = 0, len2: number = graphicalMusicPage.MusicSystems.length; idx2 < len2; ++idx2) {
-                const musicSystem: MusicSystem = graphicalMusicPage.MusicSystems[idx2];
+            for (const musicSystem of graphicalMusicPage.MusicSystems) {
                 musicSystem.PositionAndShape.RelativePosition =
                     new PointF2D(musicSystem.PositionAndShape.RelativePosition.x, musicSystem.PositionAndShape.RelativePosition.y - distance);
             }

@@ -334,14 +334,19 @@ export class OpenSheetMusicDisplay {
             this.rules.PageHeight = 100001;
         }
 
-        // Calculate asynchronously
+        const { yieldToMain } = await import("../Util/AsyncUtil");
+
         await this.graphic.reCalculateAsync((phase, current, total) => {
-            onProgress?.("Calculating: " + phase, current, total);
+            const percent = Math.round((current / total) * 70);
+            onProgress?.(phase, percent, 100);
         });
 
         if (this.drawingParameters.drawCursors) {
             this.graphic.Cursors.length = 0;
         }
+
+        onProgress?.("Preparing", 70, 100);
+        await yieldToMain();
 
         if (true || this.needBackendUpdate) {
             this.createOrRefreshRenderBackend();
@@ -349,12 +354,13 @@ export class OpenSheetMusicDisplay {
         }
 
         this.drawer.setZoom(this.zoom);
+        await yieldToMain();
 
-        // Draw progressively if async method available
         const vexDrawer = this.drawer as any;
         if (typeof vexDrawer.drawSheetAsync === "function") {
             await vexDrawer.drawSheetAsync(this.graphic, (current: number, total: number) => {
-                onProgress?.("Drawing", current, total);
+                const percent = 75 + Math.round((current / total) * 25);
+                onProgress?.("Drawing", percent, 100);
             });
         } else {
             this.drawer.drawSheet(this.graphic);

@@ -185,6 +185,45 @@ export class GraphicalMusicSheet {
         }
     }
 
+    /**
+     * Async version of transformRelativeToAbsolutePosition that yields periodically.
+     */
+    public static async transformRelativeToAbsolutePositionAsync(
+        graphicalMusicSheet: GraphicalMusicSheet
+    ): Promise<void> {
+        const { yieldToMain } = await import("../../Util/AsyncUtil");
+
+        for (const page of graphicalMusicSheet.MusicPages) {
+            const pageAbsolute: PointF2D = page.setMusicPageAbsolutePosition(
+                graphicalMusicSheet.MusicPages.indexOf(page),
+                graphicalMusicSheet.ParentMusicSheet.Rules
+            );
+
+            const stack: { box: BoundingBox; x: number; y: number }[] = [
+                { box: page.PositionAndShape, x: pageAbsolute.x, y: pageAbsolute.y }
+            ];
+
+            let processed = 0;
+            while (stack.length > 0) {
+                const { box, x, y } = stack.pop()!;
+                box.AbsolutePosition.x = box.RelativePosition.x + x;
+                box.AbsolutePosition.y = box.RelativePosition.y + y;
+
+                for (let i = box.ChildElements.length - 1; i >= 0; i--) {
+                    stack.push({
+                        box: box.ChildElements[i],
+                        x: box.AbsolutePosition.x,
+                        y: box.AbsolutePosition.y
+                    });
+                }
+
+                if (++processed % 100 === 0) {
+                    await yieldToMain();
+                }
+            }
+        }
+    }
+
     public Initialize(): void {
         this.verticalGraphicalStaffEntryContainers = [];
         this.musicPages = [];

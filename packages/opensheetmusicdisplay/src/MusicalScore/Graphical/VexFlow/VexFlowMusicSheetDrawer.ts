@@ -153,15 +153,15 @@ export class VexFlowMusicSheetDrawer extends MusicSheetDrawer {
             }
 
             for (const system of page.MusicSystems) {
+                onProgress?.(currentSystem, totalSystems);
+                await yieldToMain();
+
                 if (this.isVisible(system.PositionAndShape)) {
                     this.drawMusicSystem(system);
                 }
                 currentSystem++;
-                onProgress?.(currentSystem, totalSystems);
-                await yieldToMain();
             }
 
-            // Draw page labels for first page
             if (page === page.Parent.MusicPages[0]) {
                 for (const label of page.Labels) {
                     label.SVGNode = this.drawLabel(label, <number>GraphicalLayers.Notes);
@@ -170,6 +170,8 @@ export class VexFlowMusicSheetDrawer extends MusicSheetDrawer {
 
             this.pageIdx++;
         }
+
+        onProgress?.(totalSystems, totalSystems);
 
         // Draw cursors
         this.drawSplitScreenLine();
