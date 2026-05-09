@@ -22,6 +22,25 @@ import {CollectionUtil} from "../../Util/CollectionUtil";
 import {SystemLinePosition} from "./SystemLinePosition";
 import { MusicSheet } from "../MusicSheet";
 
+// VexFlow 1.2 constants, kept local to avoid importing VexFlow classes into this layer.
+const VEXFLOW_STAVE_BEGIN_POSITION: number = 5;
+const VEXFLOW_REPEAT_BEGIN_BARLINE_TYPE: number = 4;
+const VEXFLOW_BARLINE_CATEGORY: string = "barlines";
+const VEXFLOW_TIME_SIGNATURE_CATEGORY: string = "timesignatures";
+
+type VexFlowModifierLike = {
+    getType?: () => number;
+    getX?: () => number;
+    setX?: (x: number) => unknown;
+};
+
+type VexFlowStaveLike = {
+    formatBegModifiers?: (staves: VexFlowStaveLike[]) => void;
+    getModifiers?: (position?: number, category?: string) => VexFlowModifierLike[];
+    getNoteStartX?: () => number;
+    setNoteStartX?: (x: number) => unknown;
+};
+
 export class MusicSystemBuilder {
     protected measureList: GraphicalMeasure[][];
     protected graphicalMusicSheet: GraphicalMusicSheet;
@@ -643,7 +662,7 @@ export class MusicSystemBuilder {
         }
         let totalBeginInstructionLengthX: number = 0.0;
         const sourceMeasure: SourceMeasure = measures[0].parentSourceMeasure;
-        const staves: any[] = []; // VF.Stave. generally don't want to reference Vexflow classes here.
+        const staves: VexFlowStaveLike[] = []; // VF.Stave. generally don't want to reference Vexflow classes here.
         for (let idx: number = 0; idx < measureCount; ++idx) {
             const measure: GraphicalMeasure = measures[idx];
             if (measure) { // MultiRestMeasure may be undefined
@@ -658,8 +677,59 @@ export class MusicSystemBuilder {
             );
             totalBeginInstructionLengthX = Math.max(totalBeginInstructionLengthX, beginInstructionLengthX);
         }
-        staves[0].formatBegModifiers(staves); // x-align notes / beginning modifiers like time signatures, e.g. for transposing instruments
+        this.formatBeginModifiers(staves); // x-align notes / beginning modifiers like time signatures, e.g. for transposing instruments
         return totalBeginInstructionLengthX;
+    }
+
+    protected formatBeginModifiers(staves: VexFlowStaveLike[]): void {
+        if (staves.length === 0) {
+            return;
+        }
+
+        const firstStave: VexFlowStaveLike = staves[0];
+        if (typeof firstStave.formatBegModifiers === "function") {
+            firstStave.formatBegModifiers(staves);
+            return;
+        }
+
+        this.alignNoteStartXs(staves);
+        this.alignBeginModifierXs(staves, VEXFLOW_BARLINE_CATEGORY, VEXFLOW_REPEAT_BEGIN_BARLINE_TYPE);
+        this.alignBeginModifierXs(staves, VEXFLOW_TIME_SIGNATURE_CATEGORY);
+    }
+
+    protected alignNoteStartXs(staves: VexFlowStaveLike[]): void {
+        let maxX: number = 0;
+        for (const stave of staves) {
+            const x: number = stave.getNoteStartX?.() ?? 0;
+            if (x > maxX) {
+                maxX = x;
+            }
+        }
+        for (const stave of staves) {
+            stave.setNoteStartX?.(maxX);
+        }
+    }
+
+    protected alignBeginModifierXs(staves: VexFlowStaveLike[], category: string, type?: number): void {
+        let maxX: number = 0;
+        const modifierGroups: VexFlowModifierLike[][] = [];
+        for (const stave of staves) {
+            const modifiers: VexFlowModifierLike[] = stave
+                .getModifiers?.(VEXFLOW_STAVE_BEGIN_POSITION, category)
+                ?.filter((modifier: VexFlowModifierLike) => type === undefined || modifier.getType?.() === type) ?? [];
+            modifierGroups.push(modifiers);
+            for (const modifier of modifiers) {
+                const x: number = modifier.getX?.() ?? 0;
+                if (x > maxX) {
+                    maxX = x;
+                }
+            }
+        }
+        for (const modifiers of modifierGroups) {
+            for (const modifier of modifiers) {
+                modifier.setX?.(maxX);
+            }
+        }
     }
 
     /**
