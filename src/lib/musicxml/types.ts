@@ -108,6 +108,7 @@ export type PlaybackEvent = {
   absoluteBeat: number;
   sourceStartBeat: number;
   durationBeats: number;
+  notationDurationBeats?: number;
   noteEventIds: string[];
   notes: NoteEvent[];
   measureNumber: string;

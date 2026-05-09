@@ -425,12 +425,14 @@ function buildSourcePlaybackEvents(
     const first = orderedNotes[0];
     const hand: Hand = notes.every((note) => note.hand === first.hand) ? first.hand : "unknown";
     const sourceStartBeat = Math.min(...orderedNotes.map((note) => note.startBeat));
+    const durationBeats = performanceDuration(orderedNotes, tiedDurations);
 
     baseEvents.push({
       id: `playback-${index}`,
       absoluteBeat: sourceStartBeat - graceLeadInBeats(orderedNotes),
       sourceStartBeat,
-      durationBeats: performanceDuration(orderedNotes, tiedDurations),
+      durationBeats,
+      notationDurationBeats: durationBeats,
       noteEventIds: orderedNotes.map((note) => note.id),
       notes: orderedNotes,
       measureNumber: first.measureNumber,
@@ -494,11 +496,13 @@ function withGlissandoPlayback(
       const progress = index / (generatedCount + 1);
       const absoluteBeat = segment.startBeat + beatSpan * progress;
       const note = syntheticGlissandoNote(segment.startNote, midi);
+      const durationBeats = Math.min(0.1, beatSpan / (generatedCount + 1));
       glissandoEvents.push({
         id: `gliss-${segment.id}-${index}`,
         absoluteBeat,
         sourceStartBeat: absoluteBeat,
-        durationBeats: Math.min(0.1, beatSpan / (generatedCount + 1)),
+        durationBeats,
+        notationDurationBeats: durationBeats,
         noteEventIds: [note.id],
         notes: [note],
         measureNumber: segment.startNote.measureNumber,

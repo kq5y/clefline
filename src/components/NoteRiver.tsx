@@ -506,7 +506,7 @@ export const NoteRiver = memo(function NoteRiver({
         }
 
         const startBeat = event.absoluteBeat + graceOffset;
-        const durationBeats = event.durationBeats;
+        const durationBeats = event.notationDurationBeats ?? event.durationBeats;
         const layout = pianoKeyLayoutForMidiInRange(
           note.midi,
           riverRange.minMidi,
