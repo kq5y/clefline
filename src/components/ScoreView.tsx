@@ -3,11 +3,7 @@ import type { OpenSheetMusicDisplay as OSMDInstance } from "opensheetmusicdispla
 import { sanitizeScoreDisplayXml } from "../lib/musicxml/displayXml";
 import { loadOsmd } from "../lib/osmd";
 import { loadAndRenderOsmdAsync } from "../lib/osmdAsync";
-import {
-  createPlaybackDisplayAnchor,
-  displayPlaybackBeat,
-  type PlaybackDisplayAnchor,
-} from "../lib/playbackDisplayPosition";
+import { displayPlaybackBeat } from "../lib/playbackDisplayPosition";
 import { sourceBeatAt, usePracticeStore } from "../store/practiceStore";
 import { performanceBeatAtSourceBeat, type ScoreModel } from "../lib/musicxml";
 
@@ -431,7 +427,6 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
   const lastHighlightTimeRef = useRef(0);
   const animationFrameRef = useRef<number | undefined>(undefined);
   const positionBuildCancelRef = useRef<(() => void) | undefined>(undefined);
-  const playbackAnchorRef = useRef<PlaybackDisplayAnchor>(createPlaybackDisplayAnchor());
   const scoreOffsetRef = useRef<ScoreOffset>({ x: 0, y: 0 });
   const scoreBoundsRef = useRef<ScoreBounds>({
     scrollHeight: 0,
@@ -776,7 +771,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
         startScorePositionIndexBuild();
       }
 
-      const positionBeats = displayPlaybackBeat(state, playbackAnchorRef.current, frameTime);
+      const positionBeats = displayPlaybackBeat(state, frameTime);
       const sourceBeat = sourceBeatAt(state.score, positionBeats);
       updateScorePosition(sourceBeat, frameTime);
       animationFrameRef.current = window.requestAnimationFrame(frame);

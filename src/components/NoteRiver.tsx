@@ -1,10 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { pianoKeyLayoutForMidiInRange, type PianoKeyLayout } from "../lib/pianoLayout";
-import {
-  createPlaybackDisplayAnchor,
-  displayPlaybackBeat,
-  type PlaybackDisplayAnchor,
-} from "../lib/playbackDisplayPosition";
+import { displayPlaybackBeat } from "../lib/playbackDisplayPosition";
 import {
   minimumPositionBeats,
   usePracticeStore,
@@ -492,7 +488,6 @@ export const NoteRiver = memo(function NoteRiver({
   const labelSignatureRef = useRef("");
   const lastLabelUpdateTimeRef = useRef(0);
   const animationFrameRef = useRef<number | undefined>(undefined);
-  const playbackAnchorRef = useRef<PlaybackDisplayAnchor>(createPlaybackDisplayAnchor());
   const visualScore = useMemo<VisualScore>(() => {
     if (!score || playbackEvents.length === 0) {
       return EMPTY_VISUAL_SCORE;
@@ -708,7 +703,7 @@ export const NoteRiver = memo(function NoteRiver({
 
     const update = (frameTime: number) => {
       const state = usePracticeStore.getState();
-      const positionBeats = displayPlaybackBeat(state, playbackAnchorRef.current, frameTime);
+      const positionBeats = displayPlaybackBeat(state, frameTime);
       latestPositionBeatRef.current = positionBeats;
       if (
         positionBeats < anchorBeatRef.current - REANCHOR_BEHIND_BEATS ||
