@@ -1166,7 +1166,7 @@ export abstract class MusicSheetCalculator {
 
         onProgress?.("Calculating layout", 55, 100);
         await yieldToMain();
-        this.calculateSkyBottomLines();
+        await this.calculateSkyBottomLinesAsync(() => yieldToMain());
         this.calculateTupletNumbers();
 
         if (this.rules.RenderMeasureNumbers) {
@@ -3289,6 +3289,15 @@ export abstract class MusicSheetCalculator {
                 this.graphicalMeasureCreatedCalculations(measure);
             }
         }
+    }
+
+    /**
+     * Skyline calculation is the longest uninterrupted block in a render.
+     * Subclasses can split it up and hand the main thread back in between.
+     */
+    protected async calculateSkyBottomLinesAsync(yieldFn: () => Promise<void>): Promise<void> {
+        this.calculateSkyBottomLines();
+        await yieldFn();
     }
 
     protected calculateSkyBottomLines(): void {

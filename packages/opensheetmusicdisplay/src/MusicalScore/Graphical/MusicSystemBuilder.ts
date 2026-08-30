@@ -214,7 +214,8 @@ export class MusicSystemBuilder {
     public async buildMusicSystemsAsync(
         onProgress?: (current: number, total: number) => void
     ): Promise<MusicSystem[]> {
-        const { yieldToMain } = await import("../../Util/AsyncUtil");
+        const { YieldGuard } = await import("../../Util/AsyncUtil");
+        const yieldGuard: InstanceType<typeof YieldGuard> = new YieldGuard();
         const systemMaxWidth: number = this.getFullPageSystemWidth();
         let prevMeasureEndsPart: boolean = false;
         this.measureListIndex = 0;
@@ -320,7 +321,7 @@ export class MusicSystemBuilder {
             processedCount++;
             if (processedCount % 8 === 0) {
                 onProgress?.(processedCount, totalMeasures);
-                await yieldToMain();
+                await yieldGuard.maybeYield();
             }
         }
         if (this.currentSystemParams.systemMeasures.length > 0) {

@@ -15,6 +15,25 @@ This is a fork of [OpenSheetMusicDisplay](https://github.com/opensheetmusicdispl
 - **File**: `src/MusicalScore/Graphical/VexFlow/VexFlowMusicSheetDrawer.ts`
 - Added `drawSheetAsync()` for async drawing with progress reporting
 
+### Yielding Strategy
+- **File**: `src/Util/AsyncUtil.ts`
+- `yieldToMain()` falls back to `setTimeout` when the tab is hidden, where
+  `requestAnimationFrame` never fires and rendering would stall indefinitely
+- Added `YieldGuard`, which yields on a time budget instead of an item count
+
+- **Files**: `src/MusicalScore/Graphical/GraphicalMusicSheet.ts`,
+  `src/MusicalScore/Graphical/MusicSystemBuilder.ts`
+- Every yield costs a full frame, so yielding every N items dominated the work
+  itself: `transformRelativeToAbsolutePositionAsync` spent 2.4s of a 6s render
+  waiting for frames. Both now yield through `YieldGuard`
+
+### Chunked Sky/Bottom Line Calculation
+- **Files**: `src/MusicalScore/Graphical/MusicSheetCalculator.ts`,
+  `src/MusicalScore/Graphical/VexFlow/VexFlowMusicSheetCalculator.ts`
+- Added `calculateSkyBottomLinesAsync()`, which batches a bounded number of
+  measures at a time and yields in between. Batching every measure of a long
+  horizontal staffline at once froze the main thread for ~0.8s
+
 ### Minimum Measure Width
 - **File**: `src/MusicalScore/Graphical/EngravingRules.ts`
 - Added `MinimumMeasureWidth` property to prevent narrow measures (e.g., whole notes)

@@ -191,7 +191,8 @@ export class GraphicalMusicSheet {
     public static async transformRelativeToAbsolutePositionAsync(
         graphicalMusicSheet: GraphicalMusicSheet
     ): Promise<void> {
-        const { yieldToMain } = await import("../../Util/AsyncUtil");
+        const { YieldGuard } = await import("../../Util/AsyncUtil");
+        const yieldGuard: InstanceType<typeof YieldGuard> = new YieldGuard();
 
         for (const page of graphicalMusicSheet.MusicPages) {
             const pageAbsolute: PointF2D = page.setMusicPageAbsolutePosition(
@@ -217,8 +218,10 @@ export class GraphicalMusicSheet {
                     });
                 }
 
-                if (++processed % 100 === 0) {
-                    await yieldToMain();
+                // Checking the clock every so often is much cheaper than the
+                // frame that every yield costs.
+                if ((++processed & 0xFF) === 0 && yieldGuard.shouldYield()) {
+                    await yieldGuard.yield();
                 }
             }
         }
