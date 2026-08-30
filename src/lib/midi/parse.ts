@@ -252,6 +252,7 @@ function buildNotes(
         measureNumber: measure.number,
         isGrace: false,
         isChordTone: false,
+        velocity: midiNote.velocity,
         tieStart: false,
         tieStop: false,
         notations: [],

@@ -48,6 +48,8 @@ export type NoteEvent = {
   measureNumber: string;
   isGrace: boolean;
   isChordTone: boolean;
+  /** 0-1 when the source records how hard the note was struck (MIDI). */
+  velocity?: number;
   tieStart: boolean;
   tieStop: boolean;
   tieGroupId?: string;
