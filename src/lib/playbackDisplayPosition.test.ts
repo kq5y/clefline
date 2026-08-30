@@ -1,10 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { clearPlaybackAnchor, setPlaybackAnchor } from "./playbackAnchor";
+import { displayPlaybackBeat } from "./playbackDisplayPosition";
 import { usePracticeStore } from "../store/practiceStore";
-import {
-  createPlaybackDisplayAnchor,
-  displayPlaybackBeat,
-  type PlaybackDisplayAnchor,
-} from "./playbackDisplayPosition";
 
 const simpleXml = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="4.0">
@@ -24,114 +21,64 @@ const simpleXml = `<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>`;
 
-describe("createPlaybackDisplayAnchor", () => {
-  it("creates anchor from current store state", () => {
-    usePracticeStore.getState().loadXml(simpleXml, "test.musicxml");
-    usePracticeStore.getState().setPosition(2);
+function playFrom(positionBeats: number, anchorTime: number): void {
+  usePracticeStore.getState().loadXml(simpleXml, "test.musicxml");
+  usePracticeStore.getState().setPosition(positionBeats);
+  usePracticeStore.getState().setPlaying(true);
+  setPlaybackAnchor(usePracticeStore.getState().positionBeats, anchorTime);
+}
 
-    const anchor = createPlaybackDisplayAnchor();
-
-    expect(anchor.positionBeats).toBe(2);
-    expect(anchor.isPlaying).toBe(false);
-    expect(anchor.time).toBeGreaterThan(0);
-  });
+afterEach(() => {
+  usePracticeStore.getState().setPlaying(false);
+  clearPlaybackAnchor();
 });
 
 describe("displayPlaybackBeat", () => {
-  it("returns current position when not playing", () => {
+  it("returns the stored position when not playing", () => {
     usePracticeStore.getState().loadXml(simpleXml, "test.musicxml");
     usePracticeStore.getState().setPosition(1);
 
-    const anchor = createPlaybackDisplayAnchor();
-    const state = usePracticeStore.getState();
-
-    const beat = displayPlaybackBeat(state, anchor, performance.now());
-
-    expect(beat).toBe(1);
+    expect(displayPlaybackBeat(usePracticeStore.getState(), 1000)).toBe(1);
   });
 
-  it("extrapolates position forward when playing", () => {
-    usePracticeStore.getState().loadXml(simpleXml, "test.musicxml");
-    usePracticeStore.getState().setPosition(0);
-    usePracticeStore.getState().setPlaying(true);
+  it("extrapolates from the clock anchor while playing", () => {
+    playFrom(0, 1000);
 
-    const now = performance.now();
-    const anchor: PlaybackDisplayAnchor = {
-      isPlaying: true,
-      playbackEvents: usePracticeStore.getState().playbackEvents,
-      positionBeats: 0,
-      time: now - 100, // 100ms ago
-    };
-    const state = usePracticeStore.getState();
-
-    const beat = displayPlaybackBeat(state, anchor, now);
-
-    // At 120 BPM, 100ms = 0.2 beats
-    expect(beat).toBeGreaterThan(0);
-    expect(beat).toBeLessThan(0.5);
-
-    usePracticeStore.getState().setPlaying(false);
+    // 120 BPM means 100ms of wall clock is 0.2 beats.
+    expect(displayPlaybackBeat(usePracticeStore.getState(), 1100)).toBeCloseTo(0.2, 5);
   });
 
-  it("updates anchor when state changes", () => {
-    usePracticeStore.getState().loadXml(simpleXml, "test.musicxml");
-    usePracticeStore.getState().setPosition(0);
-
-    const anchor = createPlaybackDisplayAnchor();
-    const initialTime = anchor.time;
-
-    // Change position
+  it("does not extrapolate a position the clock has not committed", () => {
+    playFrom(0, 1000);
     usePracticeStore.getState().setPosition(2);
-    const newState = usePracticeStore.getState();
-    const frameTime = performance.now();
 
-    displayPlaybackBeat(newState, anchor, frameTime);
-
-    expect(anchor.positionBeats).toBe(2);
-    expect(anchor.time).toBe(frameTime);
-    expect(anchor.time).not.toBe(initialTime);
+    expect(displayPlaybackBeat(usePracticeStore.getState(), 1100)).toBe(2);
   });
 
-  it("limits extrapolation to prevent large jumps", () => {
-    usePracticeStore.getState().loadXml(simpleXml, "test.musicxml");
-    usePracticeStore.getState().setPosition(0);
-    usePracticeStore.getState().setPlaying(true);
+  it("limits how far ahead of the anchor it will run", () => {
+    playFrom(0, 1000);
 
-    const now = performance.now();
-    const anchor: PlaybackDisplayAnchor = {
-      isPlaying: true,
-      playbackEvents: usePracticeStore.getState().playbackEvents,
-      positionBeats: 0,
-      time: now - 1000, // 1 second ago (would be 2 beats at 120 BPM)
-    };
-    const state = usePracticeStore.getState();
-
-    const beat = displayPlaybackBeat(state, anchor, now);
-
-    // Should be clamped by MAX_POSITION_EXTRAPOLATION_SECONDS (0.18s)
-    expect(beat).toBeLessThan(1);
-
-    usePracticeStore.getState().setPlaying(false);
+    // Two seconds would be 4 beats; the cap keeps it far below that.
+    expect(displayPlaybackBeat(usePracticeStore.getState(), 3000)).toBeLessThan(1);
   });
 
-  it("does not exceed playback end beat", () => {
+  it("does not run past the end of the score", () => {
+    playFrom(3.9, 1000);
+
+    expect(displayPlaybackBeat(usePracticeStore.getState(), 1300)).toBeLessThanOrEqual(4);
+  });
+
+  it("wraps back to the loop start", () => {
     usePracticeStore.getState().loadXml(simpleXml, "test.musicxml");
+    usePracticeStore.getState().updateSettings({
+      loopEnabled: true,
+      loopStartMeasure: "1",
+      loopEndMeasure: "1",
+    });
     usePracticeStore.getState().setPosition(3.9);
     usePracticeStore.getState().setPlaying(true);
+    setPlaybackAnchor(usePracticeStore.getState().positionBeats, 1000);
 
-    const now = performance.now();
-    const anchor: PlaybackDisplayAnchor = {
-      isPlaying: true,
-      playbackEvents: usePracticeStore.getState().playbackEvents,
-      positionBeats: 3.9,
-      time: now - 500, // Would push past end
-    };
-    const state = usePracticeStore.getState();
-
-    const beat = displayPlaybackBeat(state, anchor, now);
-
-    expect(beat).toBeLessThanOrEqual(4);
-
-    usePracticeStore.getState().setPlaying(false);
+    expect(displayPlaybackBeat(usePracticeStore.getState(), 1200)).toBeLessThan(1);
   });
 });

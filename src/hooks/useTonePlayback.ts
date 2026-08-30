@@ -6,6 +6,7 @@ import {
   scheduleMidiOnBackend,
 } from "../lib/audio/pianoEngine";
 import { buildMetronomeClicks } from "../lib/musicxml";
+import { playbackAnchorAgeSeconds } from "../lib/playbackAnchor";
 import {
   loopBounds,
   playbackEndBeat,
@@ -23,6 +24,7 @@ const HIDDEN_LOOK_AHEAD_SECONDS = 2.2;
 const LATE_EVENT_CATCHUP_SECONDS = 0.6;
 const MIN_SCHEDULE_DELAY_SECONDS = 0.004;
 const MAX_SCHEDULED_IDS = 500;
+const MAX_ANCHOR_AGE_SECONDS = 0.35;
 const metronomeClickCache = new WeakMap<ScoreModel, ReturnType<typeof buildMetronomeClicks>>();
 
 function firstEventIndexAtOrAfter(events: { absoluteBeat: number }[], beat: number): number {
@@ -196,6 +198,19 @@ export function useTonePlayback(): void {
     }
 
     wasPlayingRef.current = true;
+    // Start from where the score is now. The catch-up window below only exists
+    // for notes that fall due while a scheduling pass is delayed, so applying it
+    // to the first pass would replay notes that already sounded.
+    const startState = usePracticeStore.getState();
+    playbackEventsRef.current = startState.playbackEvents;
+    eventCursorRef.current = firstEventIndexAtOrAfter(
+      startState.playbackEvents,
+      startState.positionBeats - 0.001,
+    );
+    metronomeCursorRef.current = undefined;
+    scheduledRef.current.clear();
+    previousPositionRef.current = startState.positionBeats;
+    previousPositionTimeRef.current = window.performance.now();
     let cancelled = false;
     const backendPromise = ensurePianoEngine();
     const schedule = async () => {
@@ -248,7 +263,12 @@ export function useTonePlayback(): void {
         const backend = await backendPromise;
         if (cancelled) return;
 
-        const startBeat = state.positionBeats;
+        // `positionBeats` is a snapshot from the last clock commit. Scheduling
+        // against it as-is makes every note land late by however long ago that
+        // commit was, which shows up as rhythmic jitter.
+        const anchorAge = playbackAnchorAgeSeconds(state.positionBeats, window.performance.now());
+        const startBeat =
+          state.positionBeats + Math.min(anchorAge ?? 0, MAX_ANCHOR_AGE_SECONDS) * beatRate;
         const toneNow = backend.Tone.now();
         const lookAheadSeconds = document.hidden ? HIDDEN_LOOK_AHEAD_SECONDS : LOOK_AHEAD_SECONDS;
         const endLimit = audioScheduleEndBeat(score, state.playbackEvents, state.settings);

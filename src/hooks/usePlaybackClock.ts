@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { clearPlaybackAnchor, setPlaybackAnchor } from "../lib/playbackAnchor";
 import {
   loopBounds,
   playbackEndBeat,
@@ -26,6 +27,7 @@ export function usePlaybackClock(): void {
       lastCommitFrame.current = 0;
       positionRef.current = usePracticeStore.getState().positionBeats;
       committedPositionRef.current = undefined;
+      clearPlaybackAnchor();
       return undefined;
     }
 
@@ -80,6 +82,7 @@ export function usePlaybackClock(): void {
         const committed = usePracticeStore.getState().positionBeats;
         positionRef.current = committed;
         committedPositionRef.current = committed;
+        setPlaybackAnchor(committed, now);
       }
 
       if (shouldStop) {
@@ -140,6 +143,7 @@ export function usePlaybackClock(): void {
     return () => {
       stopAnimationLoop();
       stopHiddenInterval();
+      clearPlaybackAnchor();
       window.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [isPlaying, score, setPlaying, setPosition]);

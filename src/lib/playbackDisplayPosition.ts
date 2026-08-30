@@ -1,3 +1,4 @@
+import { playbackAnchorAgeSeconds } from "./playbackAnchor";
 import {
   loopBounds,
   playbackEndBeat,
@@ -7,53 +8,27 @@ import {
 
 export type PracticeSnapshot = ReturnType<typeof usePracticeStore.getState>;
 
-export type PlaybackDisplayAnchor = {
-  isPlaying: boolean;
-  playbackEvents: PracticeSnapshot["playbackEvents"];
-  positionBeats: number;
-  time: number;
-};
+const MAX_POSITION_EXTRAPOLATION_SECONDS = 0.35;
 
-const MAX_POSITION_EXTRAPOLATION_SECONDS = 0.18;
-
-export function createPlaybackDisplayAnchor(): PlaybackDisplayAnchor {
-  const state = usePracticeStore.getState();
-
-  return {
-    isPlaying: state.isPlaying,
-    playbackEvents: state.playbackEvents,
-    positionBeats: state.positionBeats,
-    time: window.performance.now(),
-  };
-}
-
-export function displayPlaybackBeat(
-  state: PracticeSnapshot,
-  anchor: PlaybackDisplayAnchor,
-  frameTime: number,
-): number {
-  if (
-    state.positionBeats !== anchor.positionBeats ||
-    state.isPlaying !== anchor.isPlaying ||
-    state.playbackEvents !== anchor.playbackEvents
-  ) {
-    anchor.positionBeats = state.positionBeats;
-    anchor.isPlaying = state.isPlaying;
-    anchor.playbackEvents = state.playbackEvents;
-    anchor.time = frameTime;
-  }
-
+/**
+ * The animated views run every frame while the store position only moves every
+ * commit, so the beat is extrapolated from the clock's anchor. A seek clears
+ * the anchor, and the raw position is used until the clock republishes.
+ */
+export function displayPlaybackBeat(state: PracticeSnapshot, frameTime: number): number {
   if (!state.score || !state.isPlaying) {
     return state.positionBeats;
   }
 
-  const elapsedSeconds = Math.min(
-    MAX_POSITION_EXTRAPOLATION_SECONDS,
-    Math.max(0, (frameTime - anchor.time) / 1000),
-  );
-  const tempo = tempoAtPlaybackBeat(state.score, anchor.positionBeats);
+  const anchorAge = playbackAnchorAgeSeconds(state.positionBeats, frameTime);
+  if (anchorAge === undefined) {
+    return state.positionBeats;
+  }
+
+  const elapsedSeconds = Math.min(MAX_POSITION_EXTRAPOLATION_SECONDS, anchorAge);
+  const tempo = tempoAtPlaybackBeat(state.score, state.positionBeats);
   const beatRate = (tempo / 60) * state.settings.speed;
-  let nextPosition = anchor.positionBeats + elapsedSeconds * beatRate;
+  let nextPosition = state.positionBeats + elapsedSeconds * beatRate;
   const bounds = loopBounds(state.score, state.settings);
   if (bounds && nextPosition >= bounds.endBeat) {
     const loopDuration = Math.max(0.001, bounds.endBeat - bounds.startBeat);
