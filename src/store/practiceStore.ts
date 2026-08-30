@@ -104,7 +104,13 @@ type PersistedPracticeSettings = Pick<
 
 function storage(): Storage | undefined {
   try {
-    return globalThis.localStorage;
+    const candidate = globalThis.localStorage as Storage | undefined;
+
+    // Some runtimes (Node >= 24, restricted iframes) expose a `localStorage`
+    // global that does not implement the Web Storage API.
+    return typeof candidate?.getItem === "function" && typeof candidate.setItem === "function"
+      ? candidate
+      : undefined;
   } catch {
     return undefined;
   }
