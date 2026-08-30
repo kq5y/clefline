@@ -1515,10 +1515,48 @@ export class VexFlowMusicSheetCalculator extends MusicSheetCalculator {
     }
   }
 
-  protected calculateSkyBottomLines(): void {
+  private static readonly MaxMeasuresPerSkyBottomLineBatch: number = 40;
+
+  protected async calculateSkyBottomLinesAsync(yieldFn: () => Promise<void>): Promise<void> {
     const staffLines: StaffLine[] = CollectionUtil.flat(this.musicSystems.map(musicSystem => musicSystem.StaffLines));
-    //const numMeasures: number = staffLines.map(staffLine => staffLine.Measures.length).reduce((a, b) => a + b, 0);
-    let numMeasures: number = 0; // number of graphical measures that are rendered
+    const numMeasures: number = this.countRenderedMeasures(staffLines);
+    if (this.rules.AlwaysSetPreferredSkyBottomLineBackendAutomatically) {
+      this.rules.setPreferredSkyBottomLineBackendAutomatically(numMeasures);
+    }
+    if (numMeasures < this.rules.SkyBottomLineBatchMinMeasures) {
+      // Below the batching threshold there is not enough work to be worth a yield.
+      for (const staffLine of staffLines) {
+        staffLine.SkyBottomLineCalculator.calculateLines();
+      }
+      return;
+    }
+
+    // One batch over every measure of a long horizontal staffline blocks the
+    // main thread for close to a second, so batch a bounded number at a time.
+    let batchLines: StaffLine[] = [];
+    let batchMeasures: number = 0;
+    const flushBatch: () => void = () => {
+      if (batchLines.length === 0) {
+        return;
+      }
+      new SkyBottomLineBatchCalculator(batchLines, this.rules.PreferredSkyBottomLineBatchCalculatorBackend)
+        .calculateLines();
+      batchLines = [];
+      batchMeasures = 0;
+    };
+    for (const staffLine of staffLines) {
+      batchLines.push(staffLine);
+      batchMeasures += staffLine.Measures.length;
+      if (batchMeasures >= VexFlowMusicSheetCalculator.MaxMeasuresPerSkyBottomLineBatch) {
+        flushBatch();
+        await yieldFn();
+      }
+    }
+    flushBatch();
+  }
+
+  private countRenderedMeasures(staffLines: StaffLine[]): number {
+    let numMeasures: number = 0;
     for (const staffline of staffLines) {
       for (const measure of staffline.Measures) {
         if (measure) { // can be undefined and not rendered in multi-measure rest
@@ -1526,6 +1564,13 @@ export class VexFlowMusicSheetCalculator extends MusicSheetCalculator {
         }
       }
     }
+
+    return numMeasures;
+  }
+
+  protected calculateSkyBottomLines(): void {
+    const staffLines: StaffLine[] = CollectionUtil.flat(this.musicSystems.map(musicSystem => musicSystem.StaffLines));
+    const numMeasures: number = this.countRenderedMeasures(staffLines);
     if (this.rules.AlwaysSetPreferredSkyBottomLineBackendAutomatically) {
       this.rules.setPreferredSkyBottomLineBackendAutomatically(numMeasures);
     }
