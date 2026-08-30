@@ -213,7 +213,7 @@ function metadataForState(state: PracticeSnapshot): Metadata | undefined {
   }
 
   const loop = loopBounds(score, settings);
-  const sourcePositionBeats = sourceBeatAt(playbackEvents, positionBeats);
+  const sourcePositionBeats = sourceBeatAt(score, positionBeats);
   const activeEvents = activePlaybackEventsAt(playbackEvents, positionBeats);
   const latestEvent = latestPlaybackEventAt(playbackEvents, positionBeats);
   const displayEvents = activeEvents.length > 0 ? activeEvents : latestEvent ? [latestEvent] : [];

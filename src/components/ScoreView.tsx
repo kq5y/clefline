@@ -9,7 +9,7 @@ import {
   type PlaybackDisplayAnchor,
 } from "../lib/playbackDisplayPosition";
 import { sourceBeatAt, usePracticeStore } from "../store/practiceStore";
-import type { ScoreModel } from "../lib/musicxml";
+import { performanceBeatAtSourceBeat, type ScoreModel } from "../lib/musicxml";
 
 type ScoreViewProps = {
   active: boolean;
@@ -492,7 +492,15 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
         }
       }
 
-      setPosition(closestPosition.beat);
+      // Score positions are indexed by source beat; playback runs on the
+      // repeat-expanded timeline, so pick the pass closest to where we are now.
+      setPosition(
+        performanceBeatAtSourceBeat(
+          score,
+          closestPosition.beat,
+          usePracticeStore.getState().positionBeats,
+        ),
+      );
     },
     [score, setPosition],
   );
@@ -592,7 +600,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
         refreshScoreBounds();
         const latestState = usePracticeStore.getState();
         updateScorePosition(
-          sourceBeatAt(latestState.playbackEvents, latestState.positionBeats),
+          sourceBeatAt(latestState.score, latestState.positionBeats),
           window.performance.now(),
         );
         if (!latestState.isPlaying && viewRef.current) {
@@ -769,7 +777,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       }
 
       const positionBeats = displayPlaybackBeat(state, playbackAnchorRef.current, frameTime);
-      const sourceBeat = sourceBeatAt(state.playbackEvents, positionBeats);
+      const sourceBeat = sourceBeatAt(state.score, positionBeats);
       updateScorePosition(sourceBeat, frameTime);
       animationFrameRef.current = window.requestAnimationFrame(frame);
     };
@@ -784,7 +792,7 @@ export const ScoreView = memo(function ScoreView({ active, score }: ScoreViewPro
       if (state.isPlaying) {
         startAnimation();
       } else {
-        const sourceBeat = sourceBeatAt(state.playbackEvents, state.positionBeats);
+        const sourceBeat = sourceBeatAt(state.score, state.positionBeats);
         updateScorePosition(sourceBeat, window.performance.now());
       }
     };

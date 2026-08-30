@@ -86,3 +86,53 @@ test.describe("drag and drop sample MXL files", () => {
     });
   }
 });
+
+async function measureReadout(page: Page): Promise<string> {
+  const text = await page.getByLabel("Playback metadata").locator("span").first().textContent();
+
+  return (text ?? "").replace("M ", "").trim();
+}
+
+test("steps through repeated measures with the keyboard", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Minuet in G Major" })).toBeVisible();
+  await expectRollView(page);
+
+  for (let step = 0; step < 18; step += 1) {
+    await page.keyboard.press("ArrowRight");
+  }
+
+  // The Bach minuet repeats measures 1-16, so 18 steps land on the second pass.
+  await expect.poll(() => measureReadout(page)).toBe("2");
+  await expect(page.getByLabel("Playback metadata")).toContainText("Rep 2/2");
+
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(() => measureReadout(page)).toBe("1");
+});
+
+test("seeks to the clicked measure in the score view", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load", exact: true }).click();
+  await page.getByRole("button", { name: "Score", exact: true }).click();
+  await expectScoreView(page);
+
+  const view = page.locator(".score-scroll");
+  await expect
+    .poll(async () => view.evaluate((element) => element.scrollWidth - element.clientWidth), {
+      timeout: 25_000,
+    })
+    .toBeGreaterThan(0);
+  await view.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+
+  const box = (await view.boundingBox())!;
+  await page.mouse.click(box.x + box.width * 0.75, box.y + box.height * 0.25);
+
+  // Clicking near the end of the sheet must seek near the end of the score,
+  // not into an earlier repeat pass at the same performance beat.
+  await expect
+    .poll(async () => Number(await measureReadout(page)), { timeout: 10_000 })
+    .toBeGreaterThan(23);
+});

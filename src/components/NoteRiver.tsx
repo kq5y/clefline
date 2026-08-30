@@ -12,7 +12,15 @@ import {
   type NoteColors,
   type RiverRange,
 } from "../store/practiceStore";
-import type { Hand, NoteEvent, PlaybackEvent, ScoreModel } from "../lib/musicxml";
+import {
+  buildGlissandoSegments,
+  performanceMeasures,
+  playbackSectionsFor,
+  type Hand,
+  type NoteEvent,
+  type PlaybackEvent,
+  type ScoreModel,
+} from "../lib/musicxml";
 
 type NoteRiverProps = {
   score?: ScoreModel;
@@ -529,24 +537,50 @@ export const NoteRiver = memo(function NoteRiver({
       (first, second) => first.startBeat - second.startBeat || first.note.midi - second.note.midi,
     );
 
+    // Repeats and navigation jumps replay measures, so every pass gets its own
+    // marker on the performance timeline.
     const measures: MeasureMarker[] = [
       { index: -1, number: "0", startBeat: minimumPositionBeats(score) },
-    ];
-    let currentAbsoluteBeat = 0;
-    for (const measure of score.measures) {
-      measures.push({
-        index: measure.index,
+      ...performanceMeasures(score).map((measure) => ({
+        index: measure.measureIndex,
         number: measure.number,
-        startBeat: currentAbsoluteBeat + measure.startBeat,
-      });
-      if (measure.repeatEnd) {
-        currentAbsoluteBeat += measure.startBeat + measure.durationBeats;
-      }
-    }
+        startBeat: measure.absoluteBeat,
+      })),
+    ];
     measures.sort((first, second) => first.startBeat - second.startBeat);
 
-    // TODO: glissando segments need absoluteBeat mapping
     const glissandoSegments: VisualGlissandoSegment[] = [];
+    for (const segment of buildGlissandoSegments(score.notes)) {
+      const startLayout = pianoKeyLayoutForMidiInRange(
+        segment.startMidi,
+        riverRange.minMidi,
+        riverRange.maxMidi,
+      );
+      const endLayout = pianoKeyLayoutForMidiInRange(
+        segment.endMidi,
+        riverRange.minMidi,
+        riverRange.maxMidi,
+      );
+      for (const section of playbackSectionsFor(score)) {
+        if (
+          segment.startBeat < section.sourceStartBeat ||
+          segment.startBeat >= section.sourceEndBeat
+        ) {
+          continue;
+        }
+
+        const offset = section.performanceStartBeat - section.sourceStartBeat;
+        glissandoSegments.push({
+          endBeat: segment.endBeat + offset,
+          endX: endLayout.centerPercent,
+          hand: segment.hand,
+          id: `${segment.id}-${section.performanceStartBeat}`,
+          startBeat: segment.startBeat + offset,
+          startX: startLayout.centerPercent,
+        });
+      }
+    }
+    glissandoSegments.sort((first, second) => first.startBeat - second.startBeat);
 
     return { glissandoSegments, maxDurationBeats, measures, notes };
   }, [score, playbackEvents, riverRange]);

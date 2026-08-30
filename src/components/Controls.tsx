@@ -115,7 +115,7 @@ export const Controls = memo(function Controls() {
   };
   const activeNotes = activeMidiAt(playbackEvents, positionBeats).length;
   const loop = loopBounds(score, settings);
-  const sourceBeat = sourceBeatAt(playbackEvents, positionBeats);
+  const sourceBeat = sourceBeatAt(score, positionBeats);
   const currentMeasure =
     sourceBeat < 0
       ? "0"
