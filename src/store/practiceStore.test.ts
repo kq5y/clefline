@@ -142,8 +142,8 @@ describe("tempo resolution", () => {
 
     expect(tempoAtSourceBeat(state.score, 0)).toBe(90);
     expect(tempoAtSourceBeat(state.score, 1)).toBe(150);
-    expect(tempoAtPlaybackBeat(state.score, state.playbackEvents, 0)).toBe(90);
-    expect(tempoAtPlaybackBeat(state.score, state.playbackEvents, 1)).toBe(150);
+    expect(tempoAtPlaybackBeat(state.score, 0)).toBe(90);
+    expect(tempoAtPlaybackBeat(state.score, 1)).toBe(150);
   });
 
   it("defaults to 120 BPM when no tempo is specified", () => {
@@ -241,8 +241,8 @@ describe("sourceBeatAt", () => {
     usePracticeStore.getState().loadXml(simpleRepeatXml, "simple-repeat.musicxml");
     const state = usePracticeStore.getState();
 
-    expect(sourceBeatAt(state.playbackEvents, 0)).toBeCloseTo(0, 2);
-    expect(sourceBeatAt(state.playbackEvents, 1)).toBeCloseTo(1, 2);
+    expect(sourceBeatAt(state.score, 0)).toBeCloseTo(0, 2);
+    expect(sourceBeatAt(state.score, 1)).toBeCloseTo(1, 2);
   });
 
   it("handles expanded playback with repeats", () => {
@@ -250,14 +250,14 @@ describe("sourceBeatAt", () => {
     const state = usePracticeStore.getState();
 
     // After the repeat, playback beat 4 should map back to source beat 1
-    expect(sourceBeatAt(state.playbackEvents, 4)).toBeCloseTo(2, 2);
+    expect(sourceBeatAt(state.score, 4)).toBeCloseTo(2, 2);
   });
 
   it("returns positionBeats for negative values", () => {
     usePracticeStore.getState().loadXml(simpleRepeatXml, "simple-repeat.musicxml");
     const state = usePracticeStore.getState();
 
-    expect(sourceBeatAt(state.playbackEvents, -1)).toBe(-1);
+    expect(sourceBeatAt(state.score, -1)).toBe(-1);
   });
 });
 
@@ -320,5 +320,60 @@ describe("playback timing helpers", () => {
 
   it("returns 0 for playback end when no score", () => {
     expect(playbackEndBeat(undefined, [])).toBe(0);
+  });
+});
+
+describe("playback control", () => {
+  it("restarts from the lead-in when play is pressed at the end", () => {
+    usePracticeStore.getState().loadXml(simpleRepeatXml, "simple-repeat.musicxml");
+    const state = usePracticeStore.getState();
+    const endBeat = playbackEndBeat(state.score, state.playbackEvents);
+
+    usePracticeStore.getState().setPosition(endBeat);
+    usePracticeStore.getState().togglePlaying();
+
+    expect(usePracticeStore.getState().isPlaying).toBe(true);
+    expect(usePracticeStore.getState().positionBeats).toBe(
+      minimumPositionBeats(usePracticeStore.getState().score),
+    );
+
+    usePracticeStore.getState().togglePlaying();
+    expect(usePracticeStore.getState().isPlaying).toBe(false);
+  });
+
+  it("keeps the current position when play is pressed mid score", () => {
+    usePracticeStore.getState().loadXml(simpleRepeatXml, "simple-repeat.musicxml");
+    usePracticeStore.getState().setPosition(2);
+    usePracticeStore.getState().togglePlaying();
+
+    expect(usePracticeStore.getState().positionBeats).toBe(2);
+
+    usePracticeStore.getState().togglePlaying();
+  });
+});
+
+describe("loop range selection", () => {
+  it("moves the loop end when a later start measure is picked", () => {
+    usePracticeStore.getState().loadXml(simpleRepeatXml, "simple-repeat.musicxml");
+    usePracticeStore.getState().updateSettings({ loopEnabled: true, loopEndMeasure: "2" });
+    usePracticeStore.getState().updateSettings({ loopStartMeasure: "3" });
+
+    const state = usePracticeStore.getState();
+
+    expect(state.settings.loopStartMeasure).toBe("3");
+    expect(state.settings.loopEndMeasure).toBe("3");
+    expect(loopBounds(state.score, state.settings)).toBeDefined();
+  });
+
+  it("moves the loop start when an earlier end measure is picked", () => {
+    usePracticeStore.getState().loadXml(simpleRepeatXml, "simple-repeat.musicxml");
+    usePracticeStore.getState().updateSettings({ loopEnabled: true, loopStartMeasure: "3" });
+    usePracticeStore.getState().updateSettings({ loopEndMeasure: "1" });
+
+    const state = usePracticeStore.getState();
+
+    expect(state.settings.loopStartMeasure).toBe("1");
+    expect(state.settings.loopEndMeasure).toBe("1");
+    expect(loopBounds(state.score, state.settings)).toBeDefined();
   });
 });

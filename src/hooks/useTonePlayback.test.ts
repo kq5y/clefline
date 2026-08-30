@@ -44,32 +44,20 @@ const SIMPLE_SCORE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 describe("audio scheduler timing", () => {
   it("keeps a short late window so overdue notes are not skipped", () => {
     const score = parseMusicXml(SIMPLE_SCORE_XML);
-    const events = buildPlaybackEvents(score);
 
-    expect(audioScheduleCatchupStartBeat(score, events, 2, DEFAULT_TEST_SETTINGS)).toBeCloseTo(
-      0.8,
-      3,
-    );
+    expect(audioScheduleCatchupStartBeat(score, 2, DEFAULT_TEST_SETTINGS)).toBeCloseTo(0.8, 3);
   });
 
   it("schedules overdue notes just ahead of the current audio time", () => {
     const score = parseMusicXml(SIMPLE_SCORE_XML);
-    const events = buildPlaybackEvents(score);
 
-    expect(audioScheduleStartTime(10, score, events, 2, 1.9, DEFAULT_TEST_SETTINGS)).toBeCloseTo(
-      10.004,
-      3,
-    );
+    expect(audioScheduleStartTime(10, score, 2, 1.9, DEFAULT_TEST_SETTINGS)).toBeCloseTo(10.004, 3);
   });
 
   it("uses the same audio-time origin for future notes in a scheduling pass", () => {
     const score = parseMusicXml(SIMPLE_SCORE_XML);
-    const events = buildPlaybackEvents(score);
 
-    expect(audioScheduleStartTime(10, score, events, 2, 3, DEFAULT_TEST_SETTINGS)).toBeCloseTo(
-      10.5,
-      3,
-    );
+    expect(audioScheduleStartTime(10, score, 2, 3, DEFAULT_TEST_SETTINGS)).toBeCloseTo(10.5, 3);
   });
 });
 

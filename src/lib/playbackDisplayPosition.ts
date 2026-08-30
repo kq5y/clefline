@@ -51,7 +51,7 @@ export function displayPlaybackBeat(
     MAX_POSITION_EXTRAPOLATION_SECONDS,
     Math.max(0, (frameTime - anchor.time) / 1000),
   );
-  const tempo = tempoAtPlaybackBeat(state.score, state.playbackEvents, anchor.positionBeats);
+  const tempo = tempoAtPlaybackBeat(state.score, anchor.positionBeats);
   const beatRate = (tempo / 60) * state.settings.speed;
   let nextPosition = anchor.positionBeats + elapsedSeconds * beatRate;
   const bounds = loopBounds(state.score, state.settings);

@@ -14,7 +14,7 @@ export function usePlaybackClock(): void {
   const lastFrame = useRef<number | undefined>(undefined);
   const lastCommitFrame = useRef(0);
   const positionRef = useRef(0);
-  const wasHiddenRef = useRef(false);
+  const committedPositionRef = useRef<number | undefined>(undefined);
   const isPlaying = usePracticeStore((state) => state.isPlaying);
   const score = usePracticeStore((state) => state.score);
   const setPosition = usePracticeStore((state) => state.setPosition);
@@ -25,11 +25,12 @@ export function usePlaybackClock(): void {
       lastFrame.current = undefined;
       lastCommitFrame.current = 0;
       positionRef.current = usePracticeStore.getState().positionBeats;
-      wasHiddenRef.current = false;
+      committedPositionRef.current = undefined;
       return undefined;
     }
 
     positionRef.current = usePracticeStore.getState().positionBeats;
+    committedPositionRef.current = positionRef.current;
     const tick = () => {
       const now = window.performance.now();
       const state = usePracticeStore.getState();
@@ -39,7 +40,17 @@ export function usePlaybackClock(): void {
         return;
       }
 
-      const tempo = tempoAtPlaybackBeat(currentScore, state.playbackEvents, positionRef.current);
+      // A seek during playback (arrow keys, measure buttons, restart) changes the
+      // store behind the clock's back; adopt it instead of overwriting it.
+      if (
+        committedPositionRef.current === undefined ||
+        Math.abs(state.positionBeats - committedPositionRef.current) > 0.000001
+      ) {
+        positionRef.current = state.positionBeats;
+        committedPositionRef.current = state.positionBeats;
+      }
+
+      const tempo = tempoAtPlaybackBeat(currentScore, positionRef.current);
       const bounds = loopBounds(currentScore, state.settings);
       const beatRate = (tempo / 60) * state.settings.speed;
       const previous = lastFrame.current ?? now;
@@ -66,6 +77,9 @@ export function usePlaybackClock(): void {
       if (shouldCommit) {
         lastCommitFrame.current = now;
         setPosition(nextPosition);
+        const committed = usePracticeStore.getState().positionBeats;
+        positionRef.current = committed;
+        committedPositionRef.current = committed;
       }
 
       if (shouldStop) {
@@ -109,17 +123,14 @@ export function usePlaybackClock(): void {
       if (document.hidden) {
         stopAnimationLoop();
         startHiddenInterval();
-        wasHiddenRef.current = true;
       } else {
         stopHiddenInterval();
         startAnimationLoop();
-        wasHiddenRef.current = false;
       }
     };
 
     if (document.hidden) {
       startHiddenInterval();
-      wasHiddenRef.current = true;
     } else {
       startAnimationLoop();
     }

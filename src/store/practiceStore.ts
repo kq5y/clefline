@@ -4,10 +4,11 @@ import { readMidiFile, parseMidi, midiToScoreModel } from "../lib/midi";
 import { preloadOsmd } from "../lib/osmd";
 import {
   buildPlaybackEvents,
-  buildPlaybackSections,
   fetchMusicXml,
   parseMusicXml,
+  performanceMeasures,
   readMusicXmlFile,
+  sourceBeatAtPerformanceBeat,
   type Hand,
   type PlaybackEvent,
   type ScoreModel,
@@ -249,10 +250,6 @@ function scoreLoadErrorMessage(sourceName: string, error: unknown): string {
 
 const ACTIVE_EVENT_LOOKBACK_BEATS = 16;
 const measureByNumberCache = new WeakMap<ScoreModel, Map<string, ScoreModel["measures"][number]>>();
-const performanceMeasuresCache = new WeakMap<
-  ScoreModel,
-  Array<{ absoluteBeat: number; measureIndex: number; number: string; sourceStartBeat: number }>
->();
 const playbackStatsCache = new WeakMap<
   PlaybackEvent[],
   { endBeat: number; maxDurationBeats: number }
@@ -324,10 +321,9 @@ export function tempoAtSourceBeat(score: ScoreModel | undefined, sourceBeat: num
 
 export function tempoAtPlaybackBeat(
   score: ScoreModel | undefined,
-  events: PlaybackEvent[],
   positionBeats: number,
 ): number {
-  return tempoAtSourceBeat(score, sourceBeatAt(events, positionBeats));
+  return tempoAtSourceBeat(score, sourceBeatAt(score, positionBeats));
 }
 
 function measureByNumber(score: ScoreModel, number: string | undefined) {
@@ -342,6 +338,39 @@ function measureByNumber(score: ScoreModel, number: string | undefined) {
   }
 
   return cache.get(number);
+}
+
+/**
+ * Keeps the A/B loop selection ordered. Picking an A after B (or a B before A)
+ * would otherwise leave the loop switched on but silently inactive.
+ */
+function normalizeLoopRange(
+  score: ScoreModel | undefined,
+  settings: PracticeSettings,
+  patch: Partial<PracticeSettings>,
+): PracticeSettings {
+  if (!score) {
+    return settings;
+  }
+
+  const start = measureByNumber(score, settings.loopStartMeasure);
+  const end = measureByNumber(score, settings.loopEndMeasure);
+  if (!start || !end || start.startBeat <= end.startBeat) {
+    return settings;
+  }
+
+  if (patch.loopStartMeasure !== undefined) {
+    return { ...settings, loopEndMeasure: settings.loopStartMeasure };
+  }
+  if (patch.loopEndMeasure !== undefined) {
+    return { ...settings, loopStartMeasure: settings.loopEndMeasure };
+  }
+
+  return {
+    ...settings,
+    loopStartMeasure: settings.loopEndMeasure,
+    loopEndMeasure: settings.loopStartMeasure,
+  };
 }
 
 export function loopBounds(score: ScoreModel | undefined, settings: PracticeSettings) {
@@ -414,68 +443,6 @@ function eventIndexAtOrBefore(events: PlaybackEvent[], positionBeats: number): n
   return match;
 }
 
-function measureIndexAtOrBefore(score: ScoreModel, sourceBeat: number): number {
-  let low = 0;
-  let high = score.measures.length - 1;
-  let match = -1;
-
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    if (score.measures[middle].startBeat <= sourceBeat) {
-      match = middle;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-
-  return Math.max(0, match);
-}
-
-function performanceMeasures(score: ScoreModel) {
-  const cached = performanceMeasuresCache.get(score);
-  if (cached) {
-    return cached;
-  }
-
-  const measures: Array<{
-    absoluteBeat: number;
-    measureIndex: number;
-    number: string;
-    sourceStartBeat: number;
-  }> = [];
-
-  for (const section of buildPlaybackSections(score)) {
-    const startIndex = measureIndexAtOrBefore(score, section.sourceStartBeat);
-    for (let index = startIndex; index < score.measures.length; index += 1) {
-      const measure = score.measures[index];
-      const measureEndBeat = measure.startBeat + measure.durationBeats;
-      if (measure.startBeat >= section.sourceEndBeat) {
-        break;
-      }
-      if (measureEndBeat <= section.sourceStartBeat) {
-        continue;
-      }
-
-      const sourceStartBeat = Math.max(measure.startBeat, section.sourceStartBeat);
-      measures.push({
-        absoluteBeat: section.performanceStartBeat + (sourceStartBeat - section.sourceStartBeat),
-        measureIndex: measure.index,
-        number: measure.number,
-        sourceStartBeat,
-      });
-    }
-  }
-
-  const sorted = measures.toSorted(
-    (first, second) =>
-      first.absoluteBeat - second.absoluteBeat || first.sourceStartBeat - second.sourceStartBeat,
-  );
-  performanceMeasuresCache.set(score, sorted);
-
-  return sorted;
-}
-
 function performanceMeasureIndexAt(
   measures: Array<{ absoluteBeat: number }>,
   positionBeats: number,
@@ -537,29 +504,8 @@ function targetMeasureIndex(
   return currentIndex + delta + (isNearMeasureStart ? 0 : 1);
 }
 
-export function sourceBeatAt(events: PlaybackEvent[], positionBeats: number): number {
-  if (positionBeats < 0 || events.length === 0) {
-    return positionBeats;
-  }
-
-  const match = eventIndexAtOrBefore(events, positionBeats);
-  if (match < 0) {
-    return positionBeats;
-  }
-
-  const current = events[match];
-  const next = events[match + 1];
-  const delta = positionBeats - current.absoluteBeat;
-  if (!next || next.absoluteBeat <= current.absoluteBeat) {
-    return current.sourceStartBeat + delta;
-  }
-
-  const projected = current.sourceStartBeat + delta;
-  if (next.sourceStartBeat >= current.sourceStartBeat) {
-    return Math.min(projected, next.sourceStartBeat);
-  }
-
-  return projected;
+export function sourceBeatAt(score: ScoreModel | undefined, positionBeats: number): number {
+  return sourceBeatAtPerformanceBeat(score, positionBeats);
 }
 
 function clampPosition(
@@ -739,8 +685,19 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
   },
 
   togglePlaying() {
-    const { isPlaying, score } = get();
-    set({ isPlaying: Boolean(score) && !isPlaying });
+    const { isPlaying, playbackEvents, positionBeats, score, settings } = get();
+    if (!score || isPlaying) {
+      set({ isPlaying: false });
+      return;
+    }
+
+    const bounds = loopBounds(score, settings);
+    const endBeat = bounds?.endBeat ?? playbackEndBeat(score, playbackEvents);
+    const restartBeat = bounds?.startBeat ?? minimumPositionBeats(score);
+    set({
+      isPlaying: true,
+      positionBeats: positionBeats >= endBeat - 0.0001 ? restartBeat : positionBeats,
+    });
   },
 
   setPosition(positionBeats) {
@@ -811,7 +768,7 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
 
   updateSettings(patch) {
     const state = get();
-    const nextSettings = { ...state.settings, ...patch };
+    const nextSettings = normalizeLoopRange(state.score, { ...state.settings, ...patch }, patch);
     const score = state.score;
     const handModeChanged = patch.handMode !== undefined && patch.handMode !== state.settings.handMode;
     const playbackEvents = handModeChanged && score
