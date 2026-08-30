@@ -347,3 +347,45 @@ describe("parseMusicXml", () => {
     ]);
   });
 });
+
+describe("direction ordering", () => {
+  const backupXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <staves>2</staves>
+        <clef number="1"><sign>G</sign><line>2</line></clef>
+        <clef number="2"><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+      <direction placement="above">
+        <direction-type><dynamics><ff/></dynamics></direction-type>
+        <staff>1</staff>
+      </direction>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type><staff>1</staff></note>
+      <backup><duration>4</duration></backup>
+      <direction placement="below">
+        <direction-type><dynamics><pp/></dynamics></direction-type>
+        <sound tempo="60"/>
+        <staff>2</staff>
+      </direction>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>5</voice><type>whole</type><staff>2</staff></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+  it("sorts directions by beat across staves split by backup", () => {
+    const score = parseMusicXml(backupXml);
+    const beats = score.directions.map((direction) => direction.beat);
+
+    expect(beats).toEqual(beats.toSorted((first, second) => first - second));
+    expect(score.directions[0].beat).toBe(0);
+    expect(score.directions.find((direction) => direction.kind === "tempo")?.beat).toBe(0);
+  });
+});

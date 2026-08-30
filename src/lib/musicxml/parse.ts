@@ -607,12 +607,17 @@ export function parseMusicXml(xml: string): ScoreModel {
 
   assignTieGroups(notes);
 
+  // Multi-staff parts interleave `<backup>` elements, so directions and pedals
+  // are emitted out of order. Downstream lookups binary search these lists.
+  const sortedDirections = directions.toSorted((first, second) => first.beat - second.beat);
+  const sortedPedals = pedals.toSorted((first, second) => first.beat - second.beat);
+
   return {
     metadata,
     measures,
     notes,
-    directions,
-    pedals,
+    directions: sortedDirections,
+    pedals: sortedPedals,
     warnings,
     totalBeats: currentBeat,
     rawXml: xml,
