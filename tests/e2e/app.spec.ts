@@ -136,3 +136,18 @@ test("seeks to the clicked measure in the score view", async ({ page }) => {
     .poll(async () => Number(await measureReadout(page)), { timeout: 10_000 })
     .toBeGreaterThan(23);
 });
+
+test("scrubs the timeline from the progress bar", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load", exact: true }).click();
+  await expectRollView(page);
+
+  const slider = page.getByRole("slider", { name: "Playback position" });
+  await expect(slider).toHaveAttribute("aria-valuenow", "0");
+
+  const box = (await slider.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+  await expect(slider).toHaveAttribute("aria-valuenow", "50");
+  await expect.poll(async () => Number(await measureReadout(page))).toBeGreaterThan(10);
+});

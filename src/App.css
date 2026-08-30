@@ -121,16 +121,44 @@
   top: 0;
   right: 0;
   left: 0;
+  height: 14px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.progress-track::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
   height: 3px;
   background: rgb(255 255 255 / 7%);
+  transition: height 120ms ease;
 }
 
 .progress-track div {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
-  height: 100%;
+  height: 3px;
   background: linear-gradient(90deg, var(--accent), #ffd166);
   transform: scaleX(0);
   transform-origin: left center;
+  transition: height 120ms ease;
+}
+
+.progress-track:hover::before,
+.progress-track:focus-visible::before,
+.progress-track:hover div,
+.progress-track:focus-visible div {
+  height: 7px;
+}
+
+.progress-track:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .progress-track div.animating {
