@@ -389,3 +389,76 @@ describe("direction ordering", () => {
     expect(score.directions.find((direction) => direction.kind === "tempo")?.beat).toBe(0);
   });
 });
+
+describe("multi-part scores", () => {
+  const twoPartXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Right</part-name></score-part>
+    <score-part id="P2"><part-name>Left</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>2</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>half</type></note>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <time><beats>2</beats><beat-type>4</beat-type></time>
+        <clef><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>8</duration><voice>1</voice><type>half</type></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+  it("merges both parts and splits them into hands", () => {
+    const score = parseMusicXml(twoPartXml);
+
+    expect(score.measures).toHaveLength(2);
+    expect(score.totalBeats).toBe(4);
+    expect(score.notes).toHaveLength(5);
+    expect(
+      score.notes.filter((note) => note.hand === "right").map((note) => note.pitchName),
+    ).toEqual(["C5", "D5", "E5"]);
+    expect(
+      score.notes.filter((note) => note.hand === "left").map((note) => note.pitchName),
+    ).toEqual(["C3", "G2"]);
+    expect(score.warnings.map((warning) => warning.code)).toContain("multiple-parts");
+  });
+
+  it("aligns parts that use different divisions", () => {
+    const score = parseMusicXml(twoPartXml);
+    const startBeats = new Map(score.notes.map((note) => [note.pitchName, note.startBeat]));
+
+    expect(startBeats.get("C5")).toBe(0);
+    expect(startBeats.get("C3")).toBe(0);
+    expect(startBeats.get("E5")).toBe(2);
+    expect(startBeats.get("G2")).toBe(2);
+  });
+
+  it("keeps the hands in separate playback events", () => {
+    const score = parseMusicXml(twoPartXml);
+    const atStart = buildPlaybackEvents(score).filter((event) => event.absoluteBeat === 0);
+
+    expect(atStart).toHaveLength(2);
+    expect(atStart.map((event) => event.hand).toSorted()).toEqual(["left", "right"]);
+    expect(
+      buildPlaybackEvents(score, { handMode: "left" }).every((event) => event.hand === "left"),
+    ).toBe(true);
+  });
+});

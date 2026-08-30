@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 
 type SampleMxl = {
@@ -150,4 +152,38 @@ test("scrubs the timeline from the progress bar", async ({ page }) => {
 
   await expect(slider).toHaveAttribute("aria-valuenow", "50");
   await expect.poll(async () => Number(await measureReadout(page))).toBeGreaterThan(10);
+});
+
+async function dropXmlFile(page: Page, fileName: string, xml: string) {
+  const dataTransfer = await page.evaluateHandle(
+    ([name, content]) => {
+      const file = new File([content], name, { type: "application/xml" });
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+
+      return transfer;
+    },
+    [fileName, xml] as const,
+  );
+
+  await page.dispatchEvent(".app-shell", "dragover", { dataTransfer });
+  await page.dispatchEvent(".app-shell", "drop", { dataTransfer });
+}
+
+test("plays both hands of a score split across two parts", async ({ page }) => {
+  const xml = readFileSync(
+    fileURLToPath(new URL("fixtures/two-part.musicxml", import.meta.url)),
+    "utf8",
+  );
+
+  await page.goto("/");
+  await dropXmlFile(page, "two-part.musicxml", xml);
+  await expect(page.getByRole("heading", { name: "Two Part Test" })).toBeVisible();
+  await expectRollView(page);
+
+  // Beat 0 sounds one note per hand; only the first part would give just one.
+  await page.keyboard.press("ArrowRight");
+  await page.getByRole("button", { name: "Score info", exact: true }).click();
+  await expect(page.getByText("2 active notes")).toBeVisible();
+  await expect(page.getByText("2 parts were merged onto one practice timeline.")).toBeVisible();
 });

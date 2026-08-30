@@ -439,7 +439,7 @@ function parseBarline(barlineContent: OrderedNode[], measure: MeasureModel): voi
   if (barStyle) measure.barStyle = barStyle;
 }
 
-function assignTieGroups(notes: NoteEvent[]): void {
+function assignTieGroups(notes: NoteEvent[], prefix: string): void {
   const activeGroups = new Map<string, string>();
   let nextTieGroup = 1;
 
@@ -452,7 +452,7 @@ function assignTieGroups(notes: NoteEvent[]): void {
     }
 
     if (note.tieStart) {
-      const tieGroupId = note.tieGroupId ?? active ?? `tie-${nextTieGroup++}`;
+      const tieGroupId = note.tieGroupId ?? active ?? `${prefix}tie-${nextTieGroup++}`;
       note.tieGroupId = tieGroupId;
       activeGroups.set(key, tieGroupId);
     }
@@ -463,31 +463,29 @@ function assignTieGroups(notes: NoteEvent[]): void {
   }
 }
 
-export function parseMusicXml(xml: string): ScoreModel {
-  const { content: root, version } = parseDocument(xml);
-  const metadata = parseMetadata(root, version);
-  const partNodes = findChildren(root, "part");
-  const partNode = partNodes[0];
-  if (!partNode) {
-    throw new Error("MusicXML does not contain a playable part.");
-  }
-  const partContent = partNode["part"] as OrderedNode[];
+type ParsedPart = {
+  directions: DirectionEvent[];
+  measures: MeasureModel[];
+  notes: NoteEvent[];
+  pedals: PedalEvent[];
+};
 
+// Staff numbers restart at 1 in every part; spreading them apart keeps notes
+// from different parts out of the same chord group.
+const PART_STAFF_STRIDE = 8;
+
+function parsePartContent(
+  partContent: OrderedNode[],
+  partIndex: number,
+  warnings: ScoreWarning[],
+): ParsedPart {
   const measures: MeasureModel[] = [];
   const notes: NoteEvent[] = [];
   const directions: DirectionEvent[] = [];
   const pedals: PedalEvent[] = [];
-  const warnings: ScoreWarning[] = [];
   let divisions = 1;
   let currentBeat = 0;
   let currentTimeSignature = { beats: 4, beatType: 4 };
-
-  if (partNodes.length > 1) {
-    warnings.push({
-      code: "multiple-parts",
-      message: "Only the first part is used for the v1 piano practice timeline.",
-    });
-  }
 
   const measureNodes = findChildren(partContent, "measure");
   for (let measureIndex = 0; measureIndex < measureNodes.length; measureIndex++) {
@@ -576,7 +574,7 @@ export function parseMusicXml(xml: string): ScoreModel {
           step,
           alter,
           octave,
-          staff,
+          staff: staff + partIndex * PART_STAFF_STRIDE,
           hand: handForStaff(staff),
           voice,
           startBeat: currentBeat + noteStart / divisions,
@@ -605,21 +603,148 @@ export function parseMusicXml(xml: string): ScoreModel {
     currentBeat += measure.durationBeats;
   }
 
-  assignTieGroups(notes);
+  assignTieGroups(notes, partIndex === 0 ? "" : `p${partIndex}-`);
+
+  return { directions, measures, notes, pedals };
+}
+
+function isGrandStaffPart(part: ParsedPart): boolean {
+  let sawRight = false;
+  let sawLower = false;
+  for (const note of part.notes) {
+    if (note.hand === "right") {
+      sawRight = true;
+    } else {
+      sawLower = true;
+    }
+    if (sawRight && sawLower) {
+      return true;
+    }
+  }
+
+  return sawLower;
+}
+
+/**
+ * Hands come from the staff within a grand staff part. Scores that split the
+ * hands into two single staff parts instead are the other common layout, so
+ * the first part becomes the right hand and the second the left.
+ */
+function assignPartHands(parts: ParsedPart[]): void {
+  if (parts.length !== 2 || parts.some(isGrandStaffPart)) {
+    return;
+  }
+
+  for (const [partIndex, part] of parts.entries()) {
+    const hand: Hand = partIndex === 0 ? "right" : "left";
+    for (const note of part.notes) {
+      note.hand = hand;
+    }
+  }
+}
+
+function mergeMeasures(parts: ParsedPart[]): MeasureModel[] {
+  const measureCount = Math.max(...parts.map((part) => part.measures.length));
+  const merged: MeasureModel[] = [];
+  let startBeat = 0;
+
+  for (let index = 0; index < measureCount; index += 1) {
+    const candidates = parts
+      .map((part) => part.measures[index])
+      .filter((measure): measure is MeasureModel => Boolean(measure));
+    const base = candidates[0];
+    merged.push({
+      index,
+      number: base.number,
+      startBeat,
+      durationBeats: Math.max(...candidates.map((measure) => measure.durationBeats)),
+      timeSignature: base.timeSignature,
+      repeatStart: candidates.some((measure) => measure.repeatStart),
+      repeatEnd: candidates.some((measure) => measure.repeatEnd),
+      endings: Array.from(new Set(candidates.flatMap((measure) => measure.endings))),
+      barStyle: candidates.find((measure) => measure.barStyle)?.barStyle,
+    });
+    startBeat += merged[index].durationBeats;
+  }
+
+  return merged;
+}
+
+function measureBeatShift(part: ParsedPart, merged: MeasureModel[], measureIndex: number): number {
+  const partMeasure = part.measures[measureIndex];
+  const mergedMeasure = merged[measureIndex];
+  if (!partMeasure || !mergedMeasure) {
+    return 0;
+  }
+
+  return mergedMeasure.startBeat - partMeasure.startBeat;
+}
+
+export function parseMusicXml(xml: string): ScoreModel {
+  const { content: root, version } = parseDocument(xml);
+  const metadata = parseMetadata(root, version);
+  const partNodes = findChildren(root, "part");
+  if (partNodes.length === 0) {
+    throw new Error("MusicXML does not contain a playable part.");
+  }
+
+  const warnings: ScoreWarning[] = [];
+  const parts = partNodes.map((partNode, partIndex) =>
+    parsePartContent(partNode["part"] as OrderedNode[], partIndex, warnings),
+  );
+  assignPartHands(parts);
+
+  if (parts.length > 1) {
+    warnings.push({
+      code: "multiple-parts",
+      message: `${parts.length} parts were merged onto one practice timeline.`,
+    });
+  }
+
+  const measures = mergeMeasures(parts);
+  const notes: NoteEvent[] = [];
+  const directions: DirectionEvent[] = [];
+  const pedals: PedalEvent[] = [];
+
+  for (const part of parts) {
+    for (const note of part.notes) {
+      notes.push({
+        ...note,
+        id: `note-${notes.length}`,
+        startBeat: note.startBeat + measureBeatShift(part, measures, note.measureIndex),
+      });
+    }
+    for (const direction of part.directions) {
+      directions.push({
+        ...direction,
+        id: `direction-${directions.length}`,
+        beat: direction.beat + measureBeatShift(part, measures, direction.measureIndex),
+      });
+    }
+    for (const pedal of part.pedals) {
+      pedals.push({
+        ...pedal,
+        id: `pedal-${pedals.length}`,
+        beat: pedal.beat + measureBeatShift(part, measures, pedal.measureIndex),
+      });
+    }
+  }
 
   // Multi-staff parts interleave `<backup>` elements, so directions and pedals
   // are emitted out of order. Downstream lookups binary search these lists.
-  const sortedDirections = directions.toSorted((first, second) => first.beat - second.beat);
-  const sortedPedals = pedals.toSorted((first, second) => first.beat - second.beat);
+  directions.sort((first, second) => first.beat - second.beat);
+  pedals.sort((first, second) => first.beat - second.beat);
+
+  const lastMeasure = measures.at(-1);
 
   return {
     metadata,
     measures,
     notes,
-    directions: sortedDirections,
-    pedals: sortedPedals,
+    directions,
+    pedals,
     warnings,
-    totalBeats: currentBeat,
+    totalBeats: lastMeasure ? lastMeasure.startBeat + lastMeasure.durationBeats : 0,
     rawXml: xml,
   };
 }
