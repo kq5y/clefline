@@ -28,8 +28,23 @@ function App() {
   useTonePlayback();
   const loadFile = usePracticeStore((state) => state.loadFile);
   const handleDragOver = (event: DragEvent) => {
+    const types = Array.from(event.dataTransfer.types);
+    if (types.length > 0 && !types.includes("Files")) {
+      return;
+    }
+
     event.preventDefault();
     setDragActive(true);
+  };
+  // `dragleave` also fires when the pointer moves onto a child element, which
+  // would make the drop overlay flicker while dragging across the app.
+  const handleDragLeave = (event: DragEvent) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+      return;
+    }
+
+    setDragActive(false);
   };
   const handleDrop = (event: DragEvent) => {
     event.preventDefault();
@@ -101,7 +116,7 @@ function App() {
   return (
     <main
       className={dragActive ? "app-shell drag-active" : "app-shell"}
-      onDragLeave={() => setDragActive(false)}
+      onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >

@@ -28,6 +28,7 @@ export const KeyboardShell = memo(function KeyboardShell() {
     activeNotesForState(usePracticeStore.getState()),
   );
   const signatureRef = useRef(activeNoteSignature(activeNotes));
+  const noteColors = usePracticeStore((state) => state.settings.noteColors);
   const showNoteNames = usePracticeStore((state) => state.settings.showNoteNames);
   const riverRange = usePracticeStore((state) => state.settings.riverRange);
   const volume = usePracticeStore((state) => state.settings.volume);
@@ -60,6 +61,7 @@ export const KeyboardShell = memo(function KeyboardShell() {
     <section className="keyboard-shell" aria-label="Piano keyboard">
       <PianoKeyboard
         activeNotes={activeNotes}
+        noteColors={noteColors}
         riverRange={riverRange}
         showNoteNames={showNoteNames}
         volume={volume}

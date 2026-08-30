@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useMemo, useRef, type CSSProperties } from "react";
 import { playMidiOnce } from "../lib/audio/pianoEngine";
 import {
   BLACK_KEY_LAYOUTS,
@@ -6,10 +6,11 @@ import {
   WHITE_KEY_LAYOUTS,
 } from "../lib/pianoLayout";
 import type { Hand } from "../lib/musicxml";
-import type { RiverRange } from "../store/practiceStore";
+import type { NoteColors, RiverRange } from "../store/practiceStore";
 
 type PianoKeyboardProps = {
   activeNotes: Array<{ midi: number; hand: Hand }>;
+  noteColors: NoteColors;
   riverRange: RiverRange;
   showNoteNames: boolean;
   volume: number;
@@ -54,7 +55,13 @@ function sameActiveNotes(
 }
 
 export const PianoKeyboard = memo(
-  function PianoKeyboard({ activeNotes, riverRange, showNoteNames, volume }: PianoKeyboardProps) {
+  function PianoKeyboard({
+    activeNotes,
+    noteColors,
+    riverRange,
+    showNoteNames,
+    volume,
+  }: PianoKeyboardProps) {
     const volumeRef = useRef(volume);
     volumeRef.current = volume;
     const active = useMemo(
@@ -87,8 +94,14 @@ export const PianoKeyboard = memo(
       [riverRange],
     );
 
+    // Keeps the highlighted keys in sync with the note colours used by the roll.
+    const keyColors = {
+      "--key-left": noteColors.left,
+      "--key-right": noteColors.right,
+    } as CSSProperties;
+
     return (
-      <div className="piano-keyboard">
+      <div className="piano-keyboard" style={keyColors}>
         <div className="white-keys">
           {whiteKeys.map((key) => (
             <button
@@ -125,6 +138,8 @@ export const PianoKeyboard = memo(
   (previous, next) =>
     previous.showNoteNames === next.showNoteNames &&
     previous.volume === next.volume &&
+    previous.noteColors.left === next.noteColors.left &&
+    previous.noteColors.right === next.noteColors.right &&
     previous.riverRange.minMidi === next.riverRange.minMidi &&
     previous.riverRange.maxMidi === next.riverRange.maxMidi &&
     sameActiveNotes(previous.activeNotes, next.activeNotes),

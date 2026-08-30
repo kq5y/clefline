@@ -820,6 +820,9 @@ input:focus-visible {
 }
 
 .piano-keyboard {
+  --key-left: #52c7e8;
+  --key-right: #f7a56e;
+
   position: relative;
   width: 100%;
   height: 100%;
@@ -845,16 +848,24 @@ input:focus-visible {
 
 .white-key.active-right,
 .black-key.active-right {
-  border-color: #ffad7c;
-  background: linear-gradient(180deg, #ffe2c8, #f38e72);
-  box-shadow: 0 0 20px rgb(243 142 114 / 42%);
+  border-color: color-mix(in srgb, var(--key-right) 65%, #fff);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--key-right) 45%, #fff),
+    color-mix(in srgb, var(--key-right) 92%, #000)
+  );
+  box-shadow: 0 0 20px color-mix(in srgb, var(--key-right) 42%, transparent);
 }
 
 .white-key.active-left,
 .black-key.active-left {
-  border-color: #72d6b0;
-  background: linear-gradient(180deg, #c9fff0, #49b9c7);
-  box-shadow: 0 0 20px rgb(114 214 176 / 42%);
+  border-color: color-mix(in srgb, var(--key-left) 65%, #fff);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--key-left) 45%, #fff),
+    color-mix(in srgb, var(--key-left) 92%, #000)
+  );
+  box-shadow: 0 0 20px color-mix(in srgb, var(--key-left) 42%, transparent);
 }
 
 .white-key.active-unknown,
