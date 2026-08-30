@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Midi } from "@tonejs/midi";
+import { buildPlaybackEvents } from "../musicxml";
 import { parseMidi, midiToScoreModel } from "./parse";
 import type { ParsedMidiFile } from "./types";
 
@@ -252,5 +253,37 @@ describe("midiToScoreModel", () => {
     const note56 = score.notes.find((n) => n.midi === 56);
     expect(note55?.hand).toBe("left");
     expect(note56?.hand).toBe("right");
+  });
+});
+
+describe("MIDI velocity", () => {
+  const parsed = createParsedMidi({
+    tracks: [
+      {
+        name: "Piano",
+        notes: [
+          { midi: 60, ticks: 0, durationTicks: 480, velocity: 0.9, time: 0, duration: 0.5 },
+          { midi: 62, ticks: 480, durationTicks: 480, velocity: 0.3, time: 0.5, duration: 0.5 },
+        ],
+        controlChanges: [],
+      },
+    ],
+  });
+
+  it("keeps the recorded velocity on each note", () => {
+    const score = midiToScoreModel(parsed, "test.mid");
+
+    expect(score.notes.find((note) => note.midi === 60)?.velocity).toBeCloseTo(0.9, 2);
+    expect(score.notes.find((note) => note.midi === 62)?.velocity).toBeCloseTo(0.3, 2);
+  });
+
+  it("plays loud and soft notes at different velocities", () => {
+    const score = midiToScoreModel(parsed, "test.mid");
+    const events = buildPlaybackEvents(score);
+    const loud = events.find((event) => event.notes[0].midi === 60);
+    const soft = events.find((event) => event.notes[0].midi === 62);
+
+    expect(loud?.velocity).toBeCloseTo(0.9, 2);
+    expect(soft?.velocity).toBeCloseTo(0.3, 2);
   });
 });

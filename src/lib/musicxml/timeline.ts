@@ -197,9 +197,25 @@ function wedgeVelocityAt(score: ScoreModel, beat: number, baseVelocity: number):
   return clamp(startVelocity + (endVelocity - startVelocity) * progress, 0.18, 1);
 }
 
+function recordedVelocity(notes: NoteEvent[]): number | undefined {
+  let total = 0;
+  let count = 0;
+  for (const note of notes) {
+    if (typeof note.velocity === "number" && Number.isFinite(note.velocity)) {
+      total += note.velocity;
+      count += 1;
+    }
+  }
+
+  return count > 0 ? clamp(total / count, 0.08, 1) : undefined;
+}
+
 function performanceVelocity(score: ScoreModel, notes: NoteEvent[]): number {
   const beat = notes[0]?.startBeat ?? 0;
-  const baseVelocity = wedgeVelocityAt(score, beat, baseDynamicVelocityAt(score, beat));
+  // MIDI sources record how hard each note was struck; notation only has
+  // dynamics markings to go on.
+  const baseVelocity =
+    recordedVelocity(notes) ?? wedgeVelocityAt(score, beat, baseDynamicVelocityAt(score, beat));
   let scale = 1;
 
   if (hasNotation(notes, "accent")) {
